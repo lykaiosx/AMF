@@ -16,3 +16,4 @@ except Exception:
     import ctypes
     ctypes.windll.user32.MessageBoxW(None, 'AMF could not start.\n\n' + details[-1800:], 'AMF startup error', 16)
     sys.exit(1)
+

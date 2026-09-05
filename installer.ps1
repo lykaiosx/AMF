@@ -4,7 +4,7 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
-$Version = "4.7"
+$Version = "4.8"
 $SetupDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $PayloadDir = Join-Path $SetupDir "payload"
 
@@ -26,9 +26,12 @@ function Installed-Version {
 function Find-Python {
     $found = New-Object System.Collections.Generic.List[string]
 
+    # WindowsApps\python.exe is often only a Store alias. It can start a
+    # callback/redirect stub and is not a usable interpreter for installation.
     try {
         $cmd = Get-Command python.exe -ErrorAction SilentlyContinue
-        if ($cmd -and $cmd.Source) {
+        if ($cmd -and $cmd.Source -and
+            -not $cmd.Source.ToLowerInvariant().Contains("\\windowsapps\\")) {
             $found.Add($cmd.Source)
         }
     } catch {}
@@ -44,10 +47,23 @@ function Find-Python {
             ForEach-Object { $found.Add($_.FullName) }
     }
 
+    foreach ($candidate in @(
+        (Join-Path $env:LOCALAPPDATA "Programs\Python\Python314\python.exe"),
+        (Join-Path $env:LOCALAPPDATA "Programs\Python\Python313\python.exe"),
+        (Join-Path $env:LOCALAPPDATA "Programs\Python\Python312\python.exe"),
+        (Join-Path $env:ProgramFiles "Python314\python.exe"),
+        (Join-Path $env:ProgramFiles "Python313\python.exe"),
+        (Join-Path $env:ProgramFiles "Python312\python.exe")
+    )) {
+        if (Test-Path -LiteralPath $candidate) { $found.Add($candidate) }
+    }
+
     foreach ($candidate in ($found | Select-Object -Unique)) {
-        if (Test-Path $candidate) {
-            return $candidate
-        }
+        if (-not (Test-Path -LiteralPath $candidate)) { continue }
+        try {
+            & $candidate -c "import sys; assert sys.version_info >= (3,10); print(sys.executable)" 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) { return $candidate }
+        } catch {}
     }
 
     return $null

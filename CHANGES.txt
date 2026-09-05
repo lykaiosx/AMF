@@ -1,4 +1,9 @@
-AMF 4.7
+AMF 4.8
+
+Installer callback fix: Windows Store's python.exe alias is ignored. The
+installer now selects a real Python installation, verifies it before use, and
+stores the resolved interpreter path. This prevents the callback/redirect
+stub error seen on fresh devices.
 
 Search UI: always-visible total beside the source dropdown, two filter rows to prevent clipping, and editable Min seeds / Max GB fields without spinner arrows. Max GB accepts decimals.
 

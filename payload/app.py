@@ -51,7 +51,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 CART_FILE = APP_DIR / "cart.json"
 
 APP_NAME = "AMF"
-APP_VERSION = "4.7"
+APP_VERSION = "4.8"
 APP_USER_MODEL_ID = "AMF.Desktop"
 PID_FILE = APP_DIR / "amf.pid"
 
