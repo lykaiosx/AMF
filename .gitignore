@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+install-check*.log
+startup*.log

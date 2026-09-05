@@ -1,0 +1,74 @@
+AMF 4.7
+
+Search UI: always-visible total beside the source dropdown, two filter rows to prevent clipping, and editable Min seeds / Max GB fields without spinner arrows. Max GB accepts decimals.
+
+EZTV and Anna's Archive: dedicated search-page parsers preserve complete queries and page order. Anna's Archive excludes recent-download links and reads book title, format, language, size and details. Direct requests blocked by verification are reported as errors. Use Read EZTV Page or Read Anna's Archive Page, wait for the search page, complete any site verification yourself, then Read These Results. This imports only the displayed page; site-wide totals may be larger. Book detail pages are not mislabeled as torrent download links.
+
+Verified: parser fixtures based on observed live markup, numeric entry, visible counts, browser dialog construction, installer startup and version checks. Browser-session availability depends on each site's verification service.
+
+AMF 4.6
+
+New: Test All Sources runs a single search term against every configured source, including disabled sources, with up to three concurrent checks, per-source results, progress and cancellation. Zero results do not imply downloadable content. Existing per-source Test & Preview remains available.
+
+New defaults: Anime Tosho (RSS), Anna's Archive (HTML search), EZTV (HTML search). Existing customized/disabled entries are retained. Live search availability and download parsing for these sites have not been verified; provider blocks or unsupported pages are reported by source tests. Anime Tosho has frozen updates. Anna's Archive book pages may not expose torrent links.
+
+Books now appears as a main destination, default D:\Books. Games, Movies, Series, Anime (Movies/Series), Music and Books can all be configured independently.
+
+AMF 4.5.1 update
+
+Installation repair
+Windows PowerShell now waits for verification and captures the real exit
+code. The test uses native Windows fonts without opening a window.
+The version check previously imported app.py from a different working
+directory and failed to locate amf_features.py. A dedicated verification
+script now resolves sibling imports and checks the version and application
+window using temporary state. The check runs before Windows registration.
+Failures are recorded in install-check.log and install-check-error.log in
+the installation folder.
+
+Run s.vbs from this folder to launch the updated installer. Keep the entire
+folder together. It uses the existing installer and preserves config/cart.
+
+Selection
+- Select Visible, Unselect Visible, Invert Visible and Clear All Selections.
+- Checked search results stay checked when you change filters or sorting.
+- Add Selected operates on currently visible checked results.
+- Successfully added results are unchecked.
+- Cart has Select All / Unselect All; Ctrl/Shift row selection is supported.
+
+Default folders
+Games:        D:\Games
+Movies:       D:\Movies
+Series:       D:\Series
+Anime Movies: D:\Anime\Movies
+Anime Series: D:\Anime\Series
+Music:        D:\Music
+
+Games categories and common game-release markers route to Games.
+YTS defaults to Movies. Nyaa/anime metadata routes into Anime, with movie
+keywords/category deciding the movie subfolder. Music/audio metadata routes
+to Music. Classification is best effort; use the Cart Destination dropdown
+to correct ambiguous titles. Custom save folders are preserved.
+
+Clients
+- qBittorrent: existing Web UI connection.
+- Deluge: Web JSON-RPC, default port 8112. Log in using its Web password;
+  connect the Web UI to a daemon before using AMF.
+- Transmission: legacy-compatible RPC, default port 9091.
+- uTorrent / Other desktop client: enter its executable path. Opens each
+  torrent in that client; choose the save folder in its dialog. This mode
+  does not enforce AMF's paths or confirm acceptance, so cart items remain.
+- Each client retains its own connection settings.
+
+Sources
+The Pirate Bay is now the fourth enabled default source, alongside Nyaa,
+1377x and YTS. Its search uses APIBay JSON because its website renders results
+with JavaScript. Existing source settings are retained. Site availability
+depends on the provider/network; live Pirate Bay access was not verified.
+
+Verification
+Automated checks passed for routing, folder overrides, selection persistence,
+client profile switching, source migration, Pirate Bay response fixtures,
+Deluge failure handling and Transmission's session handshake. The complete
+Qt interface was constructed successfully. No actual torrents were submitted
+and live client connections have not been tested.
