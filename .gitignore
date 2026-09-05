@@ -10,3 +10,6 @@ cart_backups/
 python_path.txt
 pythonw_path.txt
 amf.pid
+sent-receipts.jsonl
+dist/
+/Setup.exe

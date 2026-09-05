@@ -1,5 +1,6 @@
 
 import sys
+import uuid
 import os
 import json
 import re
@@ -23,13 +24,14 @@ except ImportError:
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from PySide6.QtGui import QIcon
 import ctypes
+from scalable_ui import FlowLayout, CartModel, DestinationDelegate
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QLabel, QLineEdit, QPushButton, QFileDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
     QComboBox, QSpinBox, QGroupBox, QFormLayout, QCheckBox,
     QAbstractItemView, QFrame, QDialog, QDialogButtonBox, QPlainTextEdit, QInputDialog,
-    QProgressDialog, QScrollArea
+    QProgressDialog, QScrollArea, QTableView, QLayout
 )
 
 try:
@@ -51,7 +53,7 @@ CONFIG_FILE = APP_DIR / "config.json"
 CART_FILE = APP_DIR / "cart.json"
 
 APP_NAME = "AMF"
-APP_VERSION = "4.9"
+APP_VERSION = "4.10"
 APP_USER_MODEL_ID = "AMF.Desktop"
 PID_FILE = APP_DIR / "amf.pid"
 
@@ -6101,7 +6103,8 @@ class AnimeDownloader(QMainWindow):
             pass
         migrate_previous_state()
         self.config = load_json(CONFIG_FILE, DEFAULT_CONFIG)
-        self.cart = load_json(CART_FILE, [])
+        from cart_sender import replay_receipts
+        self.cart = replay_receipts(load_json(CART_FILE, []), APP_DIR / 'sent-receipts.jsonl')
         self.search_results = []
         self.selected_result_keys = set()
         self.source_status = {}
@@ -6120,7 +6123,7 @@ class AnimeDownloader(QMainWindow):
 
         self.setWindowTitle(APP_NAME)
         self.resize(1380, 860)
-        self.setMinimumSize(1050, 680)
+        self.setMinimumSize(560, 400)
 
         icon_path = RESOURCE_DIR / "AMF.ico"
         if icon_path.exists():
@@ -6198,6 +6201,38 @@ class AnimeDownloader(QMainWindow):
         self.refresh_sources()
         self.refresh_paths()
         self.refresh_cart()
+        self._base_style = self.styleSheet()
+        self._responsive_timer = QTimer(self)
+        self._responsive_timer.setSingleShot(True)
+        self._responsive_timer.timeout.connect(self.adapt_layout)
+        for index, page in enumerate([self.anime_tab, self.cart_tab, self.sources_tab, self.settings_tab]):
+            title = self.tabs.tabText(index)
+            self.tabs.removeTab(index)
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.NoFrame)
+            page.layout().setSizeConstraint(QLayout.SetMinAndMaxSize)
+            scroll.setWidget(page)
+            self.tabs.insertTab(index, scroll, title)
+        self.tabs.setCurrentIndex(0)
+        area = self.screen().availableGeometry()
+        self.resize(min(1380, int(area.width() * .94)), min(860, int(area.height() * .90)))
+        self.adapt_layout()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, '_responsive_timer'):
+            self._responsive_timer.start(80)
+
+    def adapt_layout(self):
+        scale = max(.80, min(1.0, self.width() / 1380, self.height() / 860))
+        if getattr(self, '_ui_scale', None) == round(scale, 2):
+            return
+        self._ui_scale = round(scale, 2)
+        style = re.sub(r'(\d+)px', lambda m: str(max(1, round(int(m[1]) * scale))) + 'px', self._base_style)
+        self.setStyleSheet(style)
+        for table in self.findChildren(QTableView):
+            table.verticalHeader().setDefaultSectionSize(max(24, round(34 * scale)))
 
     # ---------------- ANIME ----------------
 
@@ -6224,7 +6259,7 @@ class AnimeDownloader(QMainWindow):
         row.addWidget(self.search_btn)
         layout.addLayout(row)
 
-        filters = QHBoxLayout()
+        filters = FlowLayout()
 
         self.scope_filter = QComboBox()
         self.scope_filter.addItems([
@@ -6274,7 +6309,7 @@ class AnimeDownloader(QMainWindow):
         filters.addWidget(self.total_results_label)
         filters.addStretch()
         layout.addLayout(filters)
-        filters = QHBoxLayout()
+        filters = FlowLayout()
         filters.addWidget(QLabel("Resolution"))
         filters.addWidget(self.resolution_filter)
         filters.addSpacing(8)
@@ -6898,17 +6933,17 @@ class AnimeDownloader(QMainWindow):
             "Destination is detected automatically. Double-click Save Location "
             "to choose a different folder for an individual item."
         )
+        cart_hint.setWordWrap(True)
         cart_hint.setObjectName("mutedText")
         layout.addWidget(cart_hint)
 
-        self.cart_table = QTableWidget(0, 11)
-        self.cart_table.setHorizontalHeaderLabels([
-            "Title", "Source", "Release Scope", "Destination", "Resolution",
-            "Language", "Size", "Seeds", "Status", "Save Location", "Link"
-        ])
+        self.cart_table = QTableView()
+        self.cart_model = CartModel(self)
+        self.cart_table.setModel(self.cart_model)
+        self.cart_table.setItemDelegateForColumn(3, DestinationDelegate(self.cart_table))
 
         cart_header = self.cart_table.horizontalHeader()
-        for section in range(self.cart_table.columnCount()):
+        for section in range(self.cart_model.columnCount()):
             cart_header.setSectionResizeMode(section, QHeaderView.Interactive)
 
         cart_header.setSectionsMovable(True)
@@ -6925,12 +6960,10 @@ class AnimeDownloader(QMainWindow):
         self.cart_table.setColumnWidth(10, 250)
 
         self.cart_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.cart_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.cart_table.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
         self.cart_table.setAlternatingRowColors(True)
         self.cart_table.setShowGrid(False)
-        self.cart_table.cellDoubleClicked.connect(
-            self.cart_cell_double_clicked
-        )
+        self.cart_table.doubleClicked.connect(lambda index: self.cart_cell_double_clicked(index.row(), index.column()))
         layout.addWidget(self.cart_table, 1)
 
         manual_box = QGroupBox("Add / Import Torrents")
@@ -6964,7 +6997,7 @@ class AnimeDownloader(QMainWindow):
 
         layout.addWidget(manual_box)
 
-        row = QHBoxLayout()
+        row = FlowLayout()
         remove = QPushButton("Remove Selected")
         remove.clicked.connect(self.remove_selected_cart)
 
@@ -6989,10 +7022,16 @@ class AnimeDownloader(QMainWindow):
         )
 
         send = QPushButton("Send Cart to Client")
+        self.send_cart_button = send
+        cancel_send = QPushButton('Cancel Sending')
+        self.cancel_send_button = cancel_send
+        cancel_send.setEnabled(False)
+        cancel_send.clicked.connect(lambda: self.cart_sender.requestInterruption() if getattr(self, 'cart_sender', None) else None)
+        row.addWidget(cancel_send)
         send.setObjectName("primaryButton")
         send.clicked.connect(self.send_cart_to_qbittorrent)
 
-        selection_row = QHBoxLayout()
+        selection_row = FlowLayout()
         layout.addLayout(selection_row)
         for label, action in [("Select All", self.cart_table.selectAll), ("Unselect All", self.cart_table.clearSelection)]:
             button = QPushButton(label)
@@ -7184,27 +7223,11 @@ class AnimeDownloader(QMainWindow):
             )
             return item, title
 
-        with ThreadPoolExecutor(
-            max_workers=max_workers
-        ) as pool:
-            futures = [
-                pool.submit(
-                    worker,
-                    item,
-                )
-                for item in candidates
-            ]
-
+        pool = ThreadPoolExecutor(max_workers=max_workers)
+        try:
+            from scalable_ui import bounded_results
             completed = 0
-
-            for future in as_completed(
-                futures
-            ):
-                if progress.wasCanceled():
-                    for pending in futures:
-                        pending.cancel()
-                    break
-
+            for future in bounded_results(pool, worker, candidates, progress, max_workers):
                 completed += 1
 
                 try:
@@ -7267,6 +7290,9 @@ class AnimeDownloader(QMainWindow):
                 )
                 QApplication.processEvents()
 
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+
         progress.close()
         return resolved, failed
 
@@ -7278,7 +7304,7 @@ class AnimeDownloader(QMainWindow):
         """
         rows = sorted({
             index.row()
-            for index in self.cart_table.selectedIndexes()
+            for index in self.cart_table.selectionModel().selectedRows()
         })
 
         if rows:
@@ -7609,6 +7635,7 @@ class AnimeDownloader(QMainWindow):
 
 
     def cart_cell_double_clicked(self, row, column):
+        if getattr(self, 'cart_sender', None) and self.cart_sender.isRunning(): return
         # Save Location column.
         if column != 9:
             return
@@ -7642,7 +7669,7 @@ class AnimeDownloader(QMainWindow):
     def reset_selected_cart_locations(self):
         rows = sorted({
             index.row()
-            for index in self.cart_table.selectedIndexes()
+            for index in self.cart_table.selectionModel().selectedRows()
         })
 
         if not rows:
@@ -7683,11 +7710,10 @@ class AnimeDownloader(QMainWindow):
                 self.apply_default_save_path(item, force=True)
 
             self.save_cart()
-            self.refresh_cart()
 
     def remove_selected_cart(self):
         rows = sorted(
-            {index.row() for index in self.cart_table.selectedIndexes()},
+            {index.row() for index in self.cart_table.selectionModel().selectedRows()},
             reverse=True
         )
 
@@ -7729,111 +7755,14 @@ class AnimeDownloader(QMainWindow):
         )
 
     def refresh_cart(self):
-        self.cart_table.setRowCount(len(self.cart))
         normalized = False
-
-        for row, item in enumerate(self.cart):
-            title = item.get("title", "")
-            kind = item.get("kind") or detect_kind(
-                title,
-                item.get("category", "")
-            )
-            item.setdefault("kind", kind)
-
-            if item.get("type") not in ("Games", "Series", "Movie", "Anime Movie", "Anime Series", "Music", "Books"):
-                item["type"] = (
-                    "Movie"
-                    if kind == "Movie"
-                    else "Series"
-                )
-                normalized = True
-
-            previous = (item.get("type"), item.get("save_path"))
+        for item in self.cart:
+            previous = (item.get('type'), item.get('save_path'))
             self.apply_default_save_path(item)
-            normalized |= previous != (item.get("type"), item.get("save_path"))
-
-            self.cart_table.setItem(
-                row, 0, QTableWidgetItem(title)
-            )
-            self.cart_table.setItem(
-                row, 1, QTableWidgetItem(item.get("source", ""))
-            )
-            self.cart_table.setItem(
-                row, 2, QTableWidgetItem(
-                    display_unknown(item.get("scope") or kind)
-                )
-            )
-
-            dest = QComboBox()
-            dest.addItems(["Games", "Movie", "Series", "Anime Movie", "Anime Series", "Music", "Books"])
-            dest.setCurrentText(item.get("type", "Series"))
-            dest.setToolTip(
-                "Automatic destination. Changing this updates Save Location "
-                "unless the item has a custom location."
-            )
-            dest.currentTextChanged.connect(
-                lambda value, r=row: self.cart_destination_changed(r, value)
-            )
-            self.cart_table.setCellWidget(row, 3, dest)
-
-            self.cart_table.setItem(
-                row, 4, QTableWidgetItem(
-                    display_unknown(item.get("resolution"))
-                )
-            )
-            self.cart_table.setItem(
-                row, 5, QTableWidgetItem(
-                    display_unknown(item.get("language"))
-                )
-            )
-            self.cart_table.setItem(
-                row, 6, QTableWidgetItem(
-                    display_unknown(item.get("size"))
-                )
-            )
-            self.cart_table.setItem(
-                row, 7, QTableWidgetItem(
-                    display_unknown(item.get("seeders"))
-                )
-            )
-
-            status_value = str(
-                item.get("cart_status") or "Ready"
-            ).strip() or "Ready"
-
-            status_item = QTableWidgetItem(status_value)
-
-            last_error = str(
-                item.get("last_error") or ""
-            ).strip()
-
-            if last_error:
-                status_item.setToolTip(last_error)
-
-            self.cart_table.setItem(row, 8, status_item)
-
-            save_path = self.effective_item_save_path(item)
-            location_item = QTableWidgetItem(save_path)
-            location_item.setToolTip(
-                "Double-click to choose a custom folder."
-                if not item.get("save_path_custom")
-                else "Custom folder • double-click to change it."
-            )
-            if item.get("save_path_custom"):
-                location_item.setText(f"{save_path}  • custom")
-            self.cart_table.setItem(row, 9, location_item)
-
-            display_link = (
-                item.get("link", "")
-                or item.get("local_torrent_path", "")
-            )
-            link_item = QTableWidgetItem(display_link)
-            link_item.setToolTip(display_link)
-            self.cart_table.setItem(row, 10, link_item)
-
+            normalized |= previous != (item.get('type'), item.get('save_path'))
+        self.cart_model.reset_rows(self.cart)
         if normalized:
             self.save_cart()
-
         self.refresh_cart_summary_only()
 
     # ---------------- SOURCES ----------------
@@ -8833,226 +8762,89 @@ class AnimeDownloader(QMainWindow):
             )
 
     def send_cart_to_qbittorrent(self):
-        if self.config.get("torrent_client") in ("uTorrent", "Other desktop client"):
+        if getattr(self, 'cart_sender', None) and self.cart_sender.isRunning():
+            return
+        if self.config.get('torrent_client') in ('uTorrent', 'Other desktop client'):
             return self.open_cart_in_desktop_client()
         if not self.cart:
-            QMessageBox.information(
-                self, "Cart", "Your cart is empty."
-            )
             return
+        from cart_sender import CartSender
+        self.backup_cart_snapshot('before-send')
+        batch = []
+        for item in self.cart:
+            item.setdefault('_queue_id', uuid.uuid4().hex)
+            self.apply_default_save_path(item)
+            batch.append((deep_copy(item), deep_copy(self.source_config_for_result(item))))
+        self.save_cart()
+        # The worker owns a snapshot of connection settings, never UI objects.
+        config = deep_copy(self.config)
+        def client_factory():
+            if config.get('torrent_client', 'qBittorrent') != 'qBittorrent':
+                from amf_features import RemoteClient
+                name = config['torrent_client']
+                return RemoteClient(name, config.get('client_profiles', {}).get(name, {}))
+            qb = config.get('qbittorrent', {})
+            return qbittorrentapi.Client(host=qb.get('host', '127.0.0.1'), port=int(qb.get('port', 8080)),
+                username=qb.get('username', ''), password=qb.get('password', ''),
+                REQUESTS_ARGS={'timeout': (10, 30)})
+        self._sending_items = {item['_queue_id']: item for item in self.cart}
+        self._sent_ids = set()
+        self._send_failure = ''
+        self.cart_sender = CartSender(client_factory, batch, APP_DIR / 'sent-receipts.jsonl', sys.modules[__name__], self)
+        self.cart_sender.progress.connect(self.cart_send_progress)
+        self.cart_sender.failed.connect(self.cart_send_failed)
+        self.cart_sender.finished.connect(self.cart_send_finished)
+        self._send_disabled_buttons = [button for button in self.cart_tab.findChildren(QPushButton)
+                                       if button is not self.cancel_send_button and button.isEnabled()]
+        for button in self._send_disabled_buttons: button.setEnabled(False)
+        self.cart_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.send_cart_button.setEnabled(False)
+        self.cancel_send_button.setEnabled(True)
+        self.cart_sender.start()
 
-        movies_path = str(
-            self.config.get("movies_path") or r"D:\Movies"
-        ).strip()
-        series_path = str(
-            self.config.get("series_path") or r"D:\Series"
-        ).strip()
+    def cart_send_failed(self, message):
+        self._send_failure = message
 
-        if not movies_path or not series_path:
-            QMessageBox.warning(
-                self,
-                "Download Locations",
-                "Configure both Movies and Series locations in Settings first."
-            )
-            return
+    def cart_send_progress(self, key, status, error):
+        item = self._sending_items.get(key)
+        if item:
+            item['cart_status'], item['last_error'] = status, error
+        if status == 'Sent':
+            self._sent_ids.add(key)
+        self.cart_summary.setText(f"Sending cart: {len(self._sent_ids)} confirmed / {len(self._sending_items)}")
+        # Only repaint the viewport; no table rebuild or whole-cart save per item.
+        self.cart_table.viewport().update()
 
+    def cart_send_finished(self):
+        self.cart = [item for item in self.cart if item.get('_queue_id') not in self._sent_ids]
+        for item in self.cart:
+            if item.get('cart_status') == 'Sending': item['cart_status'] = 'Ready'
         try:
-            self.backup_cart_snapshot("before-send")
-        except Exception:
-            pass
-
-        try:
-            client = self.qb_client()
-            client.auth_log_in()
-
-            sent = 0
-            failure_details = []
-            batch = list(self.cart)
-
-            for item in batch:
-                if item not in self.cart:
-                    continue
-
-                link = str(item.get("link") or "").strip()
-                local_torrent_path = str(
-                    item.get("local_torrent_path") or ""
-                ).strip()
-                title = str(
-                    item.get("title") or "Untitled torrent"
-                )
-                save_path = self.effective_item_save_path(item)
-
-                item["cart_status"] = "Sending"
-                item["last_error"] = ""
-
-                if not (link or local_torrent_path):
-                    reason = "No torrent, magnet, or local .torrent file"
-                    item["cart_status"] = "Failed"
-                    item["last_error"] = reason
-                    failure_details.append((title, reason))
-                    self.save_cart()
-                    continue
-
-                if not save_path:
-                    reason = "No save location"
-                    item["cart_status"] = "Failed"
-                    item["last_error"] = reason
-                    failure_details.append((title, reason))
-                    self.save_cart()
-                    continue
-
-                try:
-                    Path(save_path).mkdir(parents=True, exist_ok=True)
-                except Exception:
-                    pass
-
-                source = self.source_config_for_result(item)
-
-                try:
-                    if local_torrent_path:
-                        torrent_bytes = local_torrent_payload(
-                            local_torrent_path
-                        )
-                        result = client.torrents_add(
-                            torrent_files=torrent_bytes,
-                            save_path=save_path
-                        )
-
-                    elif link.lower().startswith("magnet:"):
-                        result = client.torrents_add(
-                            urls=link,
-                            save_path=save_path
-                        )
-
-                    elif link.lower().startswith(("http://", "https://")):
-                        try:
-                            torrent_bytes = fetch_torrent_payload(
-                                link,
-                                source=source,
-                                item=item,
-                                timeout=20,
-                                attempts=3,
-                            )
-                            result = client.torrents_add(
-                                torrent_files=torrent_bytes,
-                                save_path=save_path
-                            )
-                        except Exception as torrent_exc:
-                            magnet = magnet_fallback_from_detail(
-                                source,
-                                item,
-                                timeout=15,
-                            )
-                            if magnet:
-                                result = client.torrents_add(
-                                    urls=magnet,
-                                    save_path=save_path
-                                )
-                            else:
-                                raise RuntimeError(
-                                    "Could not retrieve torrent file: "
-                                    f"{torrent_exc}"
-                                )
-                    else:
-                        result = client.torrents_add(
-                            urls=link,
-                            save_path=save_path
-                        )
-
-                    if qb_add_result_failed(result):
-                        raise RuntimeError(
-                            f"qBittorrent returned: {result}"
-                        )
-
-                    try:
-                        self.cart.remove(item)
-                    except ValueError:
-                        pass
-
-                    sent += 1
-
-                    # Persist after every confirmed success. Anything not yet
-                    # successful remains in cart.json even if AMF crashes next.
-                    self.save_cart()
-
-                except Exception as exc:
-                    reason = str(exc).strip() or exc.__class__.__name__
-                    reason_low = reason.lower()
-
-                    item["cart_status"] = "Failed"
-                    item["last_error"] = reason
-                    failure_details.append((title, reason))
-
-                    # Persist failure immediately; do not discard this item.
-                    self.save_cart()
-
-            for item in self.cart:
-                if item.get("cart_status") == "Sending":
-                    item["cart_status"] = "Ready"
-
             self.save_cart()
-            self.refresh_cart()
-
-            if self.cart:
-                detail_lines = []
-
-                for title, reason in failure_details[:5]:
-                    if len(title) > 70:
-                        title = title[:67] + "..."
-                    if len(reason) > 120:
-                        reason = reason[:117] + "..."
-
-                    detail_lines.append(
-                        f"• {title}\n  {reason}"
-                    )
-
-                more = len(failure_details) - len(detail_lines)
-                extra = (
-                    f"\n\n…and {more} more failure(s)."
-                    if more > 0
-                    else ""
-                )
-
-                QMessageBox.warning(
-                    self,
-                    "Torrent Client",
-                    f"Sent {sent} item(s) successfully and removed them "
-                    f"from the cart.\n\n"
-                    f"{len(self.cart)} item(s) remain in Cart for retry."
-                    + (
-                        "\n\n" + "\n".join(detail_lines)
-                        if detail_lines
-                        else ""
-                    )
-                    + extra
-                )
-
-            elif sent:
-                noun = "torrent" if sent == 1 else "torrents"
-                self.toast.show_message(
-                    f"Sent {sent} {noun} to client • removed from cart",
-                    5000
-                )
-
+            # Clear receipts only after the new cart has been durably replaced.
+            (APP_DIR / 'sent-receipts.jsonl').unlink(missing_ok=True)
         except Exception as exc:
-            for item in self.cart:
-                if item.get("cart_status") == "Sending":
-                    item["cart_status"] = "Ready"
-
-            self.save_cart()
-            self.refresh_cart()
-
-            QMessageBox.critical(
-                self,
-                "Torrent Client",
-                "Could not complete the client operation.\n\n"
-                "Nothing still in Cart was discarded.\n\n"
-                f"{exc}"
-            )
-
-
+            self._send_failure += '\nCould not save the cart: ' + str(exc)
+        self.refresh_cart()
+        for button in self._send_disabled_buttons: button.setEnabled(True)
+        self.cart_table.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
+        self.send_cart_button.setEnabled(True)
+        self.cancel_send_button.setEnabled(False)
+        self.toast.show_message(f'{len(self._sent_ids)} sent; {len(self.cart)} retained in cart.', 6000)
+        if self._send_failure:
+            QMessageBox.warning(self, 'Client operation', self._send_failure)
+        self._sending_items.clear()
+        self.cart_sender.deleteLater()
+        self.cart_sender = None
 
     def closeEvent(self, event):
+        for worker in (getattr(self, 'cart_sender', None), self.search_worker, self.test_worker,
+                       getattr(self, 'detect_worker', None), getattr(self, 'repair_worker', None)):
+            if worker is not None and worker.isRunning():
+                worker.requestInterruption()
+                self.toast.show_message('Waiting for the current request to finish before closing.', 5000)
+                event.ignore()
+                return
         batch = getattr(self, "batch_test_worker", None)
         if batch is not None and batch.isRunning():
             batch.requestInterruption()
@@ -9274,7 +9066,7 @@ class AnimeDownloader(QMainWindow):
                 border-color: #28282D;
             }
 
-            QTableWidget {
+            QTableView {
                 background: #101013;
                 alternate-background-color: #141418;
                 color: #F4F4F5;
@@ -9285,11 +9077,11 @@ class AnimeDownloader(QMainWindow):
                 selection-color: #FFFFFF;
             }
 
-            QTableWidget::item {
+            QTableView::item {
                 padding: 6px;
             }
 
-            QTableWidget::item:selected {
+            QTableView::item:selected {
                 background: #4A1717;
                 color: #FFFFFF;
             }
@@ -9411,6 +9203,12 @@ from amf_features import install_features
 install_features(AnimeDownloader)
 
 def main():
+    if sys.platform == 'win32':
+        ctypes.windll.kernel32.CreateMutexW.restype = ctypes.c_void_p
+        mutex = ctypes.windll.kernel32.CreateMutexW(None, False, 'AMF.Desktop.Running')
+        if ctypes.windll.kernel32.GetLastError() == 183:
+            ctypes.windll.user32.MessageBoxW(None, 'AMF is already running. Open its existing window from the taskbar.', 'AMF', 64)
+            return
     app = QApplication(sys.argv)
     app.setApplicationName("AMF")
     app.setApplicationDisplayName("AMF")

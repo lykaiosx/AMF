@@ -1,30 +1,58 @@
-# AMF 4.9
+# AMF 4.10
 
-Run **INSTALL.cmd** (or Setup.exe) from this complete folder. Keep `payload`,
-`runtime_setup.ps1`, and `pip.pyz` beside the installer. No manual Python setup,
-administrator access, or ZIP creation is required.
+**[Download the Windows installer](https://github.com/lykaiosx/AMF/releases/tag/v4.10)**
 
-Supported target: 64-bit Windows 10 version 1809 or later, and Windows 11.
-32-bit Windows and older Windows versions are not supported by the current Qt UI.
-ARM devices require Windows x64 application emulation; native ARM is not tested.
-First installation requires internet access to python.org and pypi.org and their
-download hosts. Allow several minutes for the UI libraries to download.
+Run **AMF-4.10-Setup.exe**. It includes Python, Qt/PySide6 and all required Python
+libraries. Installation runs offline without system Python or administrator access.
+Close AMF before upgrading. Search and downloading still require internet access.
 
-Setup installs a private Python 3.13.7 runtime and pinned direct dependencies in
-`%LOCALAPPDATA%\Programs\AMF`. It does not depend on Microsoft Store Python aliases
-or change system Python. Python and the bundled official PyPA pip zipapp are
-checked with SHA-256 before use. Pip and its included license notices are from
-https://bootstrap.pypa.io/pip/pip.pyz.
+The local delivery folder contains the same installer named **Setup.exe**.
+You can copy that EXE alone to another computer. GitHub's Code / Download ZIP
+contains developer source, not the compiled installer.
 
-Setup verifies imports, the application version and window construction before
-replacing application files and registering shortcuts. Existing settings and cart
-files are preserved. Launch AMF from the Start menu after installation.
+Supported: x64 Windows 10 version 1809+ and Windows 11. ARM Windows requires x64
+emulation and has not been tested. Older and 32-bit Windows are unsupported.
+The installer is not code-signed.
 
-If setup fails, retain the full `dependencies.log`, `dependencies-error.log`,
-`install-check.log`, `install-check-error.log`, and `setup-error.log` from the
-installation folder. A network interruption can be retried by running setup again.
-Application launch errors are saved in `startup-error.log` in that folder.
+## Changes
 
-4.9 fixes a mismatched installer/app version and PowerShell stopping at the first
-line of Python stderr instead of installing missing dependencies. It supplies its
-own runtime rather than relying on Python installed on another computer.
+- Screen-aware window sizing, compact controls on smaller windows, wrapping
+  action bars and scrollable pages.
+- Virtual cart table without a dropdown and table objects for every torrent.
+  Double-click Destination to change it.
+- Background client transfers with cancellation between requests. Durable
+  receipts record confirmed sends; failed and unprocessed entries remain.
+- Title resolution queues at most eight requests. Closing with active workers
+  is deferred to avoid destroying a running thread.
+- Existing providers, Test All, selection controls, clients and routing remain:
+  Games, Movies, Series, Anime/Movies, Anime/Series, Music and Books.
+
+## Installation and data
+
+AMF installs in `%LOCALAPPDATA%\Programs\AMF`. Start-menu and optional desktop
+shortcuts launch its private runtime directly. Existing `config.json`, `cart.json`
+and backups survive upgrades and uninstallation. Setup verifies the version and
+application window. Logs are `install-check.log` and `startup-error.log` in the
+installation folder.
+
+Tested on the development Windows PC with an isolated runtime: 20,000 cart rows,
+1,000 simulated client transfers including failures and cancellation, and four
+tabs at three window sizes. This is not testing on every supported Windows release
+or a guarantee against every possible crash.
+
+## Build from source
+
+Install the official [Inno Setup compiler](https://jrsoftware.org/isdl.php), then run:
+
+```powershell
+.\build.ps1 -Compiler "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+```
+
+Building needs internet to prepare the pinned runtime. Output is
+`dist\AMF-4.10-Setup.exe` and `Setup.exe`. Runtime and installer binaries are excluded
+from Git; use GitHub Releases for the ready-to-install EXE.
+
+`runtime_setup.ps1` checks the official Python archive and bundled PyPA pip zipapp
+with SHA-256. Pip and runtime libraries include their upstream license notices.
+Run `tests\test_scalability.py` with the prepared runtime to test rendering, edits,
+simulated transfers, cancellation, receipt recovery and UI responsiveness.

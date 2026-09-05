@@ -31,5 +31,17 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    if '--log' in sys.argv:
+        import contextlib
+        import traceback
+        log = Path(sys.argv[sys.argv.index('--log') + 1])
+        with log.open('w', encoding='utf-8') as stream:
+            with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
+                try:
+                    main()
+                except Exception:
+                    traceback.print_exc()
+                    sys.exit(1)
+    else:
+        main()
 

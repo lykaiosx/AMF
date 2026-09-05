@@ -1,5 +1,1 @@
-AMF 4.9
-Run INSTALL.cmd or Setup.exe from this complete folder.
-Setup downloads its own Python runtime and required libraries automatically.
-Requires internet and 64-bit Windows 10 (1809+) or Windows 11.
-See README.md for installation details and troubleshooting.
+AMF 4.10. Run Setup.exe or download AMF-4.10-Setup.exe from https://github.com/lykaiosx/AMF/releases/tag/v4.10. The installer includes Python and required libraries. See README.md for details.

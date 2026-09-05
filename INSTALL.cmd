@@ -1,5 +1,9 @@
 @echo off
-setlocal
 cd /d "%~dp0"
-powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File "%~dp0installer.ps1"
-if errorlevel 1 pause
+if exist "Setup.exe" (
+    start "" "Setup.exe"
+) else (
+    echo Download AMF-4.10-Setup.exe from the GitHub release:
+    echo https://github.com/lykaiosx/AMF/releases/tag/v4.10
+    pause
+)

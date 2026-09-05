@@ -1,3 +1,11 @@
+AMF 4.10
+- Offline Inno Setup EXE includes Python, Qt and application libraries.
+- Screen-aware size, smaller controls, wrapping actions and scrollable pages.
+- Virtual cart table and cancellable background client transfers.
+- Durable success receipts preserve failed/unprocessed items after interruption.
+- Bounded title-resolution requests and safe close guards for running workers.
+- 20,000-row and 1,000-transfer simulations plus provider regression tests passed.
+
 AMF 4.9
 - Private verified Python runtime, automatic dependency installation, no Store aliases.
 - Consistent application/installer version; full Python error logging.
