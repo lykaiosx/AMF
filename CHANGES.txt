@@ -1,3 +1,9 @@
+AMF 4.9
+- Private verified Python runtime, automatic dependency installation, no Store aliases.
+- Consistent application/installer version; full Python error logging.
+- Verify the new application before copying it into the installation.
+- Tested isolated runtime setup and visible launch under Windows PowerShell 5.
+
 AMF 4.8.1
 
 Fresh-device installer diagnostics: dependency installation and startup

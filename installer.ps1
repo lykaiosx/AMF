@@ -4,7 +4,7 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
-$Version = "4.8.1"
+$Version = "4.9"
 $SetupDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $PayloadDir = Join-Path $SetupDir "payload"
 
@@ -23,70 +23,14 @@ function Installed-Version {
     }
 }
 
-function Find-Python {
-    $found = New-Object System.Collections.Generic.List[string]
-
-    # WindowsApps\python.exe is often only a Store alias. It can start a
-    # callback/redirect stub and is not a usable interpreter for installation.
-    try {
-        $cmd = Get-Command python.exe -ErrorAction SilentlyContinue
-        if ($cmd -and $cmd.Source -and
-            -not $cmd.Source.ToLowerInvariant().Contains("\\windowsapps\\")) {
-            $found.Add($cmd.Source)
-        }
-    } catch {}
-
-    $localPython = Join-Path $env:LOCALAPPDATA "Python"
-
-    if (Test-Path $localPython) {
-        Get-ChildItem `
-            -Path $localPython `
-            -Filter python.exe `
-            -Recurse `
-            -ErrorAction SilentlyContinue |
-            ForEach-Object { $found.Add($_.FullName) }
-    }
-
-    foreach ($candidate in @(
-        (Join-Path $env:LOCALAPPDATA "Programs\Python\Python314\python.exe"),
-        (Join-Path $env:LOCALAPPDATA "Programs\Python\Python313\python.exe"),
-        (Join-Path $env:LOCALAPPDATA "Programs\Python\Python312\python.exe"),
-        (Join-Path $env:ProgramFiles "Python314\python.exe"),
-        (Join-Path $env:ProgramFiles "Python313\python.exe"),
-        (Join-Path $env:ProgramFiles "Python312\python.exe")
-    )) {
-        if (Test-Path -LiteralPath $candidate) { $found.Add($candidate) }
-    }
-
-    foreach ($candidate in ($found | Select-Object -Unique)) {
-        if (-not (Test-Path -LiteralPath $candidate)) { continue }
-        try {
-            & $candidate -c "import sys; assert sys.version_info >= (3,10); print(sys.executable)" 2>$null | Out-Null
-            if ($LASTEXITCODE -eq 0) { return $candidate }
-        } catch {}
-    }
-
-    return $null
-}
-
-function Pythonw-For([string]$Python) {
-    if (-not $Python) { return $null }
-
-    $candidate = Join-Path (Split-Path -Parent $Python) "pythonw.exe"
-
-    if (Test-Path $candidate) {
-        return $candidate
-    }
-
-    return $null
-}
+. (Join-Path $SetupDir "runtime_setup.ps1")
 
 function Stop-AMF {
     Get-Process -Name "AMF" -ErrorAction SilentlyContinue |
         Stop-Process -Force -ErrorAction SilentlyContinue
 
     try {
-        $needle = (Join-Path $InstallDir "app.py").ToLowerInvariant()
+        $needle = ($InstallDir + "\").ToLowerInvariant()
 
         Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
             Where-Object {
@@ -238,7 +182,25 @@ try {
     # other runtime state already live in the permanent AMF install folder.
     # Program-file updates leave those files byte-for-byte untouched.
 
-    Set-InstallProgress 34 "Replacing AMF application files..."
+    Set-InstallProgress 48 "Downloading and preparing AMF's private runtime..."
+    $python = Install-AMFRuntime $InstallDir $SetupDir
+    $pythonw = Join-Path (Split-Path -Parent $python) 'pythonw.exe'
+    Set-InstallProgress 70 "Verifying AMF startup and version..."
+
+    $verifyLog = Join-Path $InstallDir "install-check.log"
+    $verifyErrorLog = Join-Path $InstallDir "install-check-error.log"
+    $verifyScript = Join-Path $PayloadDir "verify_install.py"
+    $check = Start-Process -FilePath $python -WindowStyle Hidden `
+        -ArgumentList @('"' + $verifyScript + '"', $Version) `
+        -WorkingDirectory $InstallDir -PassThru -Wait `
+        -RedirectStandardOutput $verifyLog -RedirectStandardError $verifyErrorLog
+    if ($check.ExitCode -ne 0) {
+        $details = Get-Content -LiteralPath $verifyErrorLog -Raw -ErrorAction SilentlyContinue
+        $output = Get-Content -LiteralPath $verifyLog -Raw -ErrorAction SilentlyContinue
+        throw "AMF startup verification failed.`r`n$output`r`n$details`r`nLogs: $verifyLog and $verifyErrorLog"
+    }
+
+    Set-InstallProgress 72 "Replacing AMF application files..."
 
     foreach ($file in @(
         "app.py",
@@ -251,6 +213,7 @@ try {
         "AMF.png",
         "requirements.txt",
         "launch_amf.ps1",
+        "run_amf.vbs",
         "uninstall.ps1"
     )) {
         $source = Join-Path $PayloadDir $file
@@ -265,67 +228,8 @@ try {
             -Force
     }
 
-    Set-InstallProgress 48 "Locating the AMF runtime..."
-
-    $python = Find-Python
-    if (-not $python) {
-        throw "Python could not be found on this computer."
-    }
-
-    # Resolve Windows execution aliases to the interpreter that passed verification.
-    $resolvedPython = & $python -c "import sys; print(sys.executable)"
-    if ($LASTEXITCODE -ne 0 -or -not $resolvedPython) { throw "Could not resolve the Python runtime." }
-    $python = ([string]($resolvedPython | Select-Object -Last 1)).Trim()
-    if (-not (Test-Path -LiteralPath $python)) { throw "Python runtime does not exist: $python" }
-    $pythonw = Pythonw-For $python
-    if (-not $pythonw) {
-        throw "pythonw.exe could not be found beside: $python"
-    }
-
-    Set-Content `
-        -Path (Join-Path $InstallDir "python_path.txt") `
-        -Value $python `
-        -Encoding ASCII
-
-    Set-Content `
-        -Path (Join-Path $InstallDir "pythonw_path.txt") `
-        -Value $pythonw `
-        -Encoding ASCII
-
-    Set-InstallProgress 58 "Checking AMF components..."
-
-    $dependencyLog = Join-Path $InstallDir "dependency-check.log"
-    & $python -c "import PySide6, requests, qbittorrentapi, bs4" *> $dependencyLog
-
-    if ($LASTEXITCODE -ne 0) {
-        Set-InstallProgress 63 "Installing required AMF components..."
-
-        & $python `
-            -m pip install `
-            -r (Join-Path $InstallDir "requirements.txt") `
-            --disable-pip-version-check *>> $dependencyLog
-
-        if ($LASTEXITCODE -ne 0) {
-            $details = Get-Content -LiteralPath $dependencyLog -Raw -ErrorAction SilentlyContinue
-            throw "Required Python components could not be installed.`r`n$details`r`nLog: $dependencyLog"
-        }
-    }
-
-    Set-InstallProgress 70 "Verifying AMF startup and version..."
-
-    $verifyLog = Join-Path $InstallDir "install-check.log"
-    $verifyErrorLog = Join-Path $InstallDir "install-check-error.log"
-    $verifyScript = Join-Path $InstallDir "verify_install.py"
-    $check = Start-Process -FilePath $python -WindowStyle Hidden `
-        -ArgumentList @('"' + $verifyScript + '"', $Version) `
-        -WorkingDirectory $InstallDir -PassThru -Wait `
-        -RedirectStandardOutput $verifyLog -RedirectStandardError $verifyErrorLog
-    if ($check.ExitCode -ne 0) {
-        $details = Get-Content -LiteralPath $verifyErrorLog -Raw -ErrorAction SilentlyContinue
-        $output = Get-Content -LiteralPath $verifyLog -Raw -ErrorAction SilentlyContinue
-        throw "AMF startup verification failed.`r`n$output`r`n$details`r`nLogs: $verifyLog and $verifyErrorLog"
-    }
-
+    Set-Content -LiteralPath (Join-Path $InstallDir 'python_path.txt') -Value $python -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $InstallDir 'pythonw_path.txt') -Value $pythonw -Encoding UTF8
     Set-InstallProgress 73 "Registering AMF with Windows..."
 
     New-Item -Path $UninstallReg -Force | Out-Null
@@ -403,11 +307,13 @@ try {
     exit 0
 }
 catch {
+    $failure = $_.Exception.Message
+    try { Set-Content -LiteralPath (Join-Path $InstallDir 'setup-error.log') -Value ($_ | Out-String) -Encoding UTF8 } catch {}
     try { $form.Close() } catch {}
 
     [System.Windows.Forms.MessageBox]::Show(
         "AMF Setup could not complete the installation.`r`n`r`n" +
-        $_.Exception.Message,
+        $failure,
         "AMF Setup",
         [System.Windows.Forms.MessageBoxButtons]::OK,
         [System.Windows.Forms.MessageBoxIcon]::Error
