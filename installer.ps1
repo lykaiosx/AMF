@@ -1,10 +1,10 @@
-﻿$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Stop"
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
-$Version = "4.8"
+$Version = "4.8.1"
 $SetupDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $PayloadDir = Join-Path $SetupDir "payload"
 
@@ -294,7 +294,8 @@ try {
 
     Set-InstallProgress 58 "Checking AMF components..."
 
-    & $python -c "import PySide6, requests, qbittorrentapi, bs4" 2>$null
+    $dependencyLog = Join-Path $InstallDir "dependency-check.log"
+    & $python -c "import PySide6, requests, qbittorrentapi, bs4" *> $dependencyLog
 
     if ($LASTEXITCODE -ne 0) {
         Set-InstallProgress 63 "Installing required AMF components..."
@@ -302,10 +303,11 @@ try {
         & $python `
             -m pip install `
             -r (Join-Path $InstallDir "requirements.txt") `
-            --disable-pip-version-check
+            --disable-pip-version-check *>> $dependencyLog
 
         if ($LASTEXITCODE -ne 0) {
-            throw "Required Python components could not be installed."
+            $details = Get-Content -LiteralPath $dependencyLog -Raw -ErrorAction SilentlyContinue
+            throw "Required Python components could not be installed.`r`n$details`r`nLog: $dependencyLog"
         }
     }
 
@@ -320,7 +322,8 @@ try {
         -RedirectStandardOutput $verifyLog -RedirectStandardError $verifyErrorLog
     if ($check.ExitCode -ne 0) {
         $details = Get-Content -LiteralPath $verifyErrorLog -Raw -ErrorAction SilentlyContinue
-        throw "AMF startup verification failed.`r`n$details`r`nLog: $verifyErrorLog"
+        $output = Get-Content -LiteralPath $verifyLog -Raw -ErrorAction SilentlyContinue
+        throw "AMF startup verification failed.`r`n$output`r`n$details`r`nLogs: $verifyLog and $verifyErrorLog"
     }
 
     Set-InstallProgress 73 "Registering AMF with Windows..."

@@ -1,4 +1,10 @@
-AMF 4.8
+AMF 4.8.1
+
+Fresh-device installer diagnostics: dependency installation and startup
+verification now write complete output to named logs and include that output
+in the error dialog. INSTALL.cmd launches the PowerShell installer from the
+correct folder, avoiding Explorer working-directory issues. Use INSTALL.cmd
+or s.vbs; do not run a stale Setup.exe copied from an earlier release.
 
 Installer callback fix: Windows Store's python.exe alias is ignored. The
 installer now selects a real Python installation, verifies it before use, and
