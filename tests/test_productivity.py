@@ -25,7 +25,8 @@ with tempfile.TemporaryDirectory(prefix='amf-productivity-') as directory:
         assert window.qb_password.text()==secret
         assert secret not in app.CONFIG_FILE.read_text()
         assert window.tabs.count()==5
-        assert window.tabs.tabText(4)=='History'
+        assert window.tabs.tabText(3)=='History'
+        assert window.tabs.tabText(4)=='Settings'
         assert not window._update_worker, 'Tests unexpectedly contacted GitHub'
         print('PASS: real Windows Credential Manager round trip; plaintext migration; history/settings UI.')
 
@@ -36,6 +37,7 @@ with tempfile.TemporaryDirectory(prefix='amf-productivity-') as directory:
         assert len(merged)==2 and merged[0]['available_sources']==['Site A','Site B']
         assert app.canonical_url_key(a['link'])==app.canonical_url_key(b['link'])
         assert window.add_import_items([a,b])==(1,1)
+        window.config['sources'].extend([{'name':'Site A','enabled':True}, {'name':'Site B','enabled':True}])
         window.search_finished([a,b],{'Site A':('OK','1 result'),'Site B':('OK','1 result')})
         assert len(window.search_results)==1
         window.source_filter.setCurrentIndex(window.source_filter.findData('Site B'))

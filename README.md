@@ -1,8 +1,8 @@
-# AMF 4.12
+# AMF 4.13
 
-**[Download the Windows installer](https://github.com/lykaiosx/AMF/releases/tag/v4.12)**
+**[Download the Windows installer](https://github.com/lykaiosx/AMF/releases/tag/v4.13)**
 
-Run **AMF-4.12-Setup.exe**. It includes Python, Qt/PySide6 and all required Python
+Run **AMF-4.13-Setup.exe**. It includes Python, Qt/PySide6 and all required Python
 libraries. Installation runs offline without system Python or administrator access.
 Close AMF before upgrading. Search and downloading still require internet access.
 
@@ -15,6 +15,15 @@ emulation and has not been tested. Older and 32-bit Windows are unsupported.
 The installer is not code-signed.
 
 ## Changes
+
+- Readable version badge and transparent label backgrounds in all themes, including after resizing.
+- Supplied white/black brand logos follow the theme. Tabs end with History, then Settings.
+- Compact, vertically centered appearance controls and aligned download-directory fields.
+- Source filters and visible results follow enabled sources immediately, including duplicate groups.
+- YTS uses its working movie API, preserving resolution, size and peer counts. Each search reads
+  up to 50 matching movies and reports how many were loaded versus the provider total.
+
+Previous features:
 
 - Update checks at startup (can be disabled in Settings), release notes, cancellable
   downloads, SHA-256 verification and an explicit Install Update action.
@@ -67,7 +76,7 @@ Install the official [Inno Setup compiler](https://jrsoftware.org/isdl.php), the
 ```
 
 Building needs internet to prepare the pinned runtime. Output is
-`dist\AMF-4.12-Setup.exe` and `Setup.exe`. Runtime and installer binaries are excluded
+`dist\AMF-4.13-Setup.exe` and `Setup.exe`. Runtime and installer binaries are excluded
 from Git; use GitHub Releases for the ready-to-install EXE.
 
 `runtime_setup.ps1` checks the official Python archive and bundled PyPA pip zipapp

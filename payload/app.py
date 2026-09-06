@@ -55,7 +55,7 @@ CART_FILE = APP_DIR / "cart.json"
 
 BACKGROUND_SERVICES = False
 APP_NAME = "AMF"
-APP_VERSION = "4.12"
+APP_VERSION = "4.13"
 APP_USER_MODEL_ID = "AMF.Desktop"
 PID_FILE = APP_DIR / "amf.pid"
 
@@ -5373,6 +5373,9 @@ def fetch_source(
     fuzzy_threshold=70,
     local_query=None
 ):
+    if source_provider_identity(source) == "yts":
+        from yts_provider import fetch_yts
+        return fetch_yts(source, query if local_query is None else local_query, timeout)
     if source_provider_identity(source) in ("eztv", "annas_archive"):
         from provider_pages import provider_url, parse_provider_page
         url = provider_url(source, query if local_query is None else local_query)
@@ -6218,7 +6221,6 @@ class AnimeDownloader(QMainWindow):
         self.refresh_sources()
         self.refresh_paths()
         self.refresh_cart()
-        self._base_style = self.styleSheet()
         self._responsive_timer = QTimer(self)
         self._responsive_timer.setSingleShot(True)
         self._responsive_timer.timeout.connect(self.adapt_layout)
@@ -6250,8 +6252,7 @@ class AnimeDownloader(QMainWindow):
         if getattr(self, '_ui_scale', None) == round(scale, 2):
             return
         self._ui_scale = round(scale, 2)
-        style = re.sub(r'(\d+)px', lambda m: str(max(1, round(int(m[1]) * scale))) + 'px', self._base_style)
-        self.setStyleSheet(style)
+        self.apply_theme()
         for table in self.findChildren(QTableView):
             table.verticalHeader().setDefaultSectionSize(max(24, round(34 * scale)))
 
@@ -6427,7 +6428,7 @@ class AnimeDownloader(QMainWindow):
 
         edit_locations = QPushButton("Edit Locations")
         edit_locations.clicked.connect(
-            lambda: self.tabs.setCurrentIndex(3)
+            lambda: self.tabs.setCurrentIndex(self.tabs.count() - 1)
         )
 
         location_header.addWidget(location_note, 1)
@@ -6471,25 +6472,18 @@ class AnimeDownloader(QMainWindow):
             for name in result.get('available_sources', [result.get('source','')]):
                 if name: counts[name] = counts.get(name,0)+1
 
-        # After a search, include every source that participated, even sources
-        # that returned zero rows. Before a search, list configured sources.
+        # Test statuses may outlive a source being disabled or removed.
+        # Only the current configuration determines filter membership.
         status_names = sorted(
             name for name in getattr(self, "source_status", {}).keys()
             if name
         )
 
-        if status_names:
-            names = status_names
-        elif self.search_results:
-            names = sorted(counts)
-        else:
-            names = sorted({
-                s.get("name", "")
-                for s in self.config.get("sources", [])
-                if s.get("name")
-            })
+        names = sorted({s['name'] for s in self.config.get('sources', [])
+                        if s.get('name') and s.get('enabled')})
 
-        total = len(self.search_results)
+        total = sum(bool(set(result.get('available_sources', [result.get('source', '')])) & set(names))
+                    for result in self.search_results)
         self.total_results_label.setText(f"{total:,} total results")
 
         self.source_filter.blockSignals(True)
@@ -6665,8 +6659,11 @@ class AnimeDownloader(QMainWindow):
         max_bytes = max_gb * 1024**3 if max_gb else 0
 
         visible = []
+        enabled_names = {s.get('name') for s in self.config.get('sources', []) if s.get('enabled')}
 
         for idx, result in enumerate(self.search_results):
+            if not enabled_names.intersection(result.get('available_sources', [result.get('source')])):
+                continue
             if scope != "All Releases" and result.get("scope", "Unknown") != scope:
                 continue
 
@@ -6738,8 +6735,10 @@ class AnimeDownloader(QMainWindow):
 
         if self.search_results:
             usable = sum(1 for _, r in visible if r.get("link_usable"))
+            enabled_total = sum(bool(enabled_names.intersection(r.get('available_sources', [r.get('source')])))
+                                for r in self.search_results)
             self.search_status.setText(
-                f"Showing {len(visible)} of {len(self.search_results)} result(s) • "
+                f"Showing {len(visible)} of {enabled_total} result(s) • "
                 f"{usable} usable torrent link(s)"
             )
 
@@ -8545,6 +8544,8 @@ class AnimeDownloader(QMainWindow):
         if 0 <= row < len(sources):
             sources[row]["enabled"] = bool(state)
             save_json(CONFIG_FILE, self.config)
+            self.refresh_source_filter_options()
+            self.apply_result_filters()
 
     def refresh_sources(self):
         if not hasattr(self, "sources_table"):
@@ -8658,20 +8659,23 @@ class AnimeDownloader(QMainWindow):
 
         from amf_features import DESTINATIONS
         self.extra_path_edits = {"games_path": self.games_path_edit}
-        anime_box = QGroupBox("Anime")
-        anime_layout = QVBoxLayout(anime_box)
-        paths_layout.addWidget(anime_box)
+        anime_heading = QLabel("Anime")
+        anime_heading.setStyleSheet('font-weight: bold; background: transparent;')
+        paths_layout.addWidget(anime_heading)
         for destination in ("Anime Movie", "Anime Series", "Music", "Books"):
             key, default = DESTINATIONS[destination]
             edit = QLineEdit(self.config.get(key, default))
             self.extra_path_edits[key] = edit
             row = QHBoxLayout()
-            row.addWidget(QLabel({"Anime Movie": "Movies", "Anime Series": "Series"}.get(destination, destination)))
+            label = QLabel({"Anime Movie": "  Movies", "Anime Series": "  Series"}.get(destination, destination))
+            label.setFixedWidth(70)
+            label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            row.addWidget(label)
             row.addWidget(edit, 1)
             browse = QPushButton("Browse")
             browse.clicked.connect(lambda checked=False, e=edit: self.choose_extra_path(e))
             row.addWidget(browse)
-            (anime_layout if destination.startswith("Anime") else paths_layout).addLayout(row)
+            paths_layout.addLayout(row)
         layout.addWidget(paths_box)
 
         box = QGroupBox("Torrent Client")
@@ -9239,9 +9243,38 @@ class AnimeDownloader(QMainWindow):
         appearance = self.config.get("appearance", {})
         name = appearance.get("theme", "Dark")
         palette = PALETTES.get(name, PALETTES["Dark"])
+        scale = getattr(self, '_ui_scale', 1.0)
         self.setStyleSheet(theme_css(self._base_style, palette,
-                                     int(appearance.get("text_size", 13)),
-                                     float(appearance.get("density", 1.0))))
+                                     max(10, round(int(appearance.get("text_size", 13)) * scale)),
+                                     float(appearance.get("density", 1.0)) * scale))
+        for choice in self.findChildren(QComboBox, 'appearanceChoice'):
+            choice.ensurePolished()
+            from PySide6.QtWidgets import QStyle, QStyleOptionComboBox
+            from PySide6.QtCore import QSize
+            option = QStyleOptionComboBox()
+            choice.initStyleOption(option)
+            contents = QSize(choice.fontMetrics().horizontalAdvance(choice.currentText()) + 12,
+                             choice.fontMetrics().height())
+            choice.setFixedWidth(choice.style().sizeFromContents(QStyle.CT_ComboBox, option, contents, choice).width())
+        from PySide6.QtGui import QImage, QPixmap
+        logo = self.findChild(QLabel, 'brandIcon')
+        if logo is not None:
+            filename = 'logo-light.png' if name == 'Light' else 'logo-dark.png'
+            if not hasattr(self, '_brand_pixmaps'):
+                self._brand_pixmaps = {}
+            image = QImage(str(Path(__file__).parent / filename)) if filename not in self._brand_pixmaps else QImage()
+            if not image.isNull():
+                # The supplied artwork has a tall transparent canvas. Trim it
+                # for display without changing the original image file.
+                mask = image.createAlphaMask()
+                from PySide6.QtGui import QBitmap, QRegion
+                bounds = QRegion(QBitmap.fromImage(mask)).boundingRect()
+                pixmap = QPixmap.fromImage(image.copy(bounds))
+                self._brand_pixmaps[filename] = pixmap
+            pixmap = self._brand_pixmaps.get(filename)
+            if pixmap is not None:
+                logo.setPixmap(pixmap.scaled(42, 42, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                self.setWindowIcon(QIcon(pixmap))
 
 
 

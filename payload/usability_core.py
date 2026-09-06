@@ -28,7 +28,13 @@ def theme_css(base, palette, text_size=13, density=1):
     # Keep text readable on accent-coloured controls, including high contrast.
     rgb=[int(palette['accent'][i:i+2],16) for i in (1,3,5)]
     foreground='#000000' if sum(rgb)>430 else '#ffffff'
-    return css+f'\nQPushButton#primaryButton {{color:{foreground};}} QPushButton:focus, QLineEdit:focus, QComboBox:focus {{border:2px solid {palette["accent"]};}}'
+    return css+f'''
+        QLabel, QCheckBox {{ background: transparent; }}
+        QLabel#versionBadge {{ color: {foreground}; background: {palette['accent']}; }}
+        QPushButton#primaryButton {{ color: {foreground}; }}
+        QComboBox#appearanceChoice {{ padding: 4px 8px; min-height: 20px; }}
+        QPushButton:focus, QLineEdit:focus, QComboBox:focus {{border:2px solid {palette["accent"]};}}
+    '''
 
 def routed_destination(item,rules):
     if item.get('destination_custom') or item.get('save_path_custom'): return None

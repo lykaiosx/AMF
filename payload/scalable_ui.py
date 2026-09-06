@@ -51,18 +51,30 @@ class FlowLayout(QLayout):
     def minimumSize(self):
         size = QSize()
         for item in self.items: size = size.expandedTo(item.minimumSize())
-        return size
+        margins = self.contentsMargins()
+        return size + QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
     def arrange(self, rect, test):
-        x, y, height = rect.x(), rect.y(), 0
+        margins = self.contentsMargins()
+        area = rect.adjusted(margins.left(), margins.top(), -margins.right(), -margins.bottom())
+        x, y, height = area.x(), area.y(), 0
+        line = []
+        def place():
+            if not test:
+                for item, left, size in line:
+                    item.setGeometry(QRect(left, y + (height - size.height()) // 2, size.width(), size.height()))
         for item in self.items:
             if item.isEmpty(): continue
             size = item.sizeHint()
-            if x > rect.x() and x + size.width() > rect.right() + 1:
-                x, y, height = rect.x(), y + height + self.spacing(), 0
-            if not test: item.setGeometry(QRect(x, y, min(size.width(), rect.width()), size.height()))
+            size.setWidth(min(size.width(), max(0, area.width())))
+            if line and x + size.width() > area.right() + 1:
+                place()
+                line = []
+                x, y, height = area.x(), y + height + self.spacing(), 0
+            line.append((item, x, size))
             x += size.width() + self.spacing()
             height = max(height, size.height())
-        return y + height - rect.y()
+        place()
+        return y + height - rect.y() + margins.bottom()
 
 
 class CartModel(QAbstractTableModel):

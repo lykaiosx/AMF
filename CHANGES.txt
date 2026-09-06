@@ -1,3 +1,11 @@
+AMF 4.13
+- Fixed version badge contrast, transparent labels, and theme preservation after resizing.
+- Added theme-specific supplied logos; History now precedes Settings as the last tab.
+- Compacted and centered appearance controls; aligned all download-directory fields.
+- Enabled-source changes immediately update search filters, counts and visible results.
+- Replaced YTS HTML guessing with structured movie search (up to 50 movies per query).
+- Verified all three themes, source toggles, live YTS results and existing cart/history checks.
+
 AMF 4.12
 - GitHub update checks, release notes and checksum-verified installer downloads.
 - Info-hash duplicate groups with all available sources and history resend prompts.
