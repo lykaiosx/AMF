@@ -67,20 +67,20 @@ with tempfile.TemporaryDirectory(prefix='amf-productivity-') as directory:
             click('Restore Cart Backup')
         assert len(window.cart)==1 and window.cart[0]['title']=='Recover this'
         (root/'startup-error.log').write_text('RuntimeError '+secret+' https://host/?password='+secret,encoding='utf-8')
-        report=json.dumps(diagnostic_report(root,'4.11',{'private source':('ERROR',secret+' timeout')}))
+        report=json.dumps(diagnostic_report(root,'4.12',{'private source':('ERROR',secret+' timeout')}))
         assert secret not in report and 'private source' not in report and str(root) not in report
         assert error_guidance('403 Cloudflare')[0]=='Browser verification required'
         assert error_guidance('401 password rejected')[0]=='Sign-in failed'
         print('PASS: saved-search CRUD, searchable/idempotent history, duplicate-history lookup and allowlisted diagnostics.')
 
         data=b'MZ synthetic test installer (never executed)'
-        asset={'name':'AMF-4.12-Setup.exe','browser_download_url':'https://github.com/lykaiosx/AMF/releases/download/v4.12/AMF-4.12-Setup.exe',
+        asset={'name':'AMF-4.13-Setup.exe','browser_download_url':'https://github.com/lykaiosx/AMF/releases/download/v4.13/AMF-4.13-Setup.exe',
                'digest':'sha256:'+hashlib.sha256(data).hexdigest(),'size':len(data)}
-        release={'tag_name':'v4.12','assets':[asset]}
+        release={'tag_name':'v4.13','assets':[asset]}
         assert version_tuple('4.10')>version_tuple('4.9')
-        assert release_asset(release,'4.11')==asset
-        assert release_asset(release,'4.12') is None
-        try: release_asset({'tag_name':'4.12','assets':[dict(asset,browser_download_url='https://evil.example/x.exe')]},'4.11')
+        assert release_asset(release,'4.12')==asset
+        assert release_asset(release,'4.13') is None
+        try: release_asset({'tag_name':'4.13','assets':[dict(asset,browser_download_url='https://evil.example/x.exe')]},'4.12')
         except ValueError: pass
         else: raise AssertionError('Untrusted updater URL accepted')
         class Response:
@@ -90,17 +90,17 @@ with tempfile.TemporaryDirectory(prefix='amf-productivity-') as directory:
             def __exit__(self,*args): pass
             def iter_content(self,*args): yield data
         with patch('update_manager.requests.get',return_value=Response()):
-            worker=UpdateWorker('4.11',root/'updates',asset)
+            worker=UpdateWorker('4.12',root/'updates',asset)
             results=[]
             worker.result.connect(results.append)
             worker.run()
             assert Path(results[0]['path']).read_bytes()==data
-            damaged=UpdateWorker('4.11',root/'bad',dict(asset,digest='sha256:'+'0'*64))
+            damaged=UpdateWorker('4.12',root/'bad',dict(asset,digest='sha256:'+'0'*64))
             errors=[]
             damaged.error.connect(errors.append)
             damaged.run()
             assert errors and not list((root/'bad').glob('*'))
-            cancelled=UpdateWorker('4.11',root/'cancelled',asset)
+            cancelled=UpdateWorker('4.12',root/'cancelled',asset)
             cancelled.isInterruptionRequested=lambda:True
             cancelled.run()
             assert not list((root/'cancelled').glob('*'))
@@ -120,3 +120,6 @@ with tempfile.TemporaryDirectory(prefix='amf-productivity-') as directory:
         print('PASS: clean-close marker removal and interrupted-session recovery notice.')
     finally:
         for target in targets: store.delete(target)
+
+
+

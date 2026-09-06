@@ -25,6 +25,7 @@ from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from PySide6.QtGui import QIcon
 import ctypes
 from scalable_ui import FlowLayout, CartModel, DestinationDelegate
+from usability_core import PALETTES, theme_css, validate_theme, check_destinations, routed_destination
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QLabel, QLineEdit, QPushButton, QFileDialog,
@@ -54,7 +55,7 @@ CART_FILE = APP_DIR / "cart.json"
 
 BACKGROUND_SERVICES = False
 APP_NAME = "AMF"
-APP_VERSION = "4.11"
+APP_VERSION = "4.12"
 APP_USER_MODEL_ID = "AMF.Desktop"
 PID_FILE = APP_DIR / "amf.pid"
 
@@ -77,7 +78,12 @@ DEFAULT_CONFIG = {
     "torrent_client": "qBittorrent",
     "client_profiles": {},
     "sources": [],
-    "source_presets": []
+    "source_presets": [],
+    "appearance": {"theme": "Dark", "text_size": 13, "density": 1.0},
+    "show_first_run_tour": True,
+    "routing_rules": [],
+    "retention_days": 90,
+    "backup_limit": 20
 }
 
 
@@ -8957,7 +8963,7 @@ class AnimeDownloader(QMainWindow):
     # ---------------- STYLE ----------------
 
     def apply_dark_style(self):
-        self.setStyleSheet("""
+        self._base_style = """
             QWidget {
                 background: #0A0A0C;
                 color: #F5F5F5;
@@ -9226,7 +9232,16 @@ class AnimeDownloader(QMainWindow):
                 color: #FFFFFF;
                 font-size: 14px;
             }
-        """)
+        """
+        self.apply_theme()
+
+    def apply_theme(self):
+        appearance = self.config.get("appearance", {})
+        name = appearance.get("theme", "Dark")
+        palette = PALETTES.get(name, PALETTES["Dark"])
+        self.setStyleSheet(theme_css(self._base_style, palette,
+                                     int(appearance.get("text_size", 13)),
+                                     float(appearance.get("density", 1.0))))
 
 
 
@@ -9253,3 +9268,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

@@ -1,4 +1,4 @@
-AMF 4.11
+AMF 4.12
 - GitHub update checks, release notes and checksum-verified installer downloads.
 - Info-hash duplicate groups with all available sources and history resend prompts.
 - Searchable paged transfer history and saved search presets.
@@ -105,3 +105,4 @@ client profile switching, source migration, Pirate Bay response fixtures,
 Deluge failure handling and Transmission's session handshake. The complete
 Qt interface was constructed successfully. No actual torrents were submitted
 and live client connections have not been tested.
+

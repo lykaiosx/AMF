@@ -7,10 +7,11 @@ from datetime import datetime
 from pathlib import Path
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import (QWidget,QVBoxLayout,QHBoxLayout,QPushButton,QLineEdit,QLabel,QComboBox,
-    QInputDialog,QMessageBox,QFileDialog,QCheckBox,QTableWidget,QTableWidgetItem,QAbstractItemView)
+    QInputDialog,QMessageBox,QFileDialog,QCheckBox,QTableWidget,QTableWidgetItem,QAbstractItemView,QGroupBox)
 from reliability import history_rows, diagnostic_report, error_guidance, previously_sent, torrent_identity
 from cart_sender import replay_receipts
 from scalable_ui import FlowLayout
+from usability_core import PALETTES, validate_theme, check_destinations, portable_settings
 from update_manager import UpdateWorker
 
 
@@ -19,6 +20,22 @@ def install_productivity(owner, api):
     owner._update_asset = None
     owner._update_path = None
     settings = owner.settings_tab.layout()
+    appearance_box = QGroupBox('Appearance')
+    appearance_layout = FlowLayout(appearance_box)
+    theme_choice = QComboBox(); theme_choice.addItems(list(PALETTES))
+    theme_choice.setCurrentText(owner.config.get('appearance', {}).get('theme', 'Dark'))
+    text_size = QComboBox(); text_size.addItems(['Small (11)', 'Normal (13)', 'Large (15)', 'Extra large (17)'])
+    text_size.setCurrentText({'11':'Small (11)','13':'Normal (13)','15':'Large (15)','17':'Extra large (17)'}.get(str(owner.config.get('appearance',{}).get('text_size',13)), 'Normal (13)'))
+    density = QComboBox(); density.addItems(['Compact', 'Comfortable']); density.setCurrentText('Compact' if owner.config.get('appearance',{}).get('density',1.0)<.95 else 'Comfortable')
+    appearance_layout.addWidget(QLabel('Theme')); appearance_layout.addWidget(theme_choice)
+    appearance_layout.addWidget(QLabel('Text size')); appearance_layout.addWidget(text_size)
+    appearance_layout.addWidget(QLabel('Spacing')); appearance_layout.addWidget(density)
+    def update_appearance():
+        sizes={'Small (11)':11,'Normal (13)':13,'Large (15)':15,'Extra large (17)':17}
+        owner.config['appearance']={'theme':theme_choice.currentText(),'text_size':sizes[text_size.currentText()], 'density':.85 if density.currentText()=='Compact' else 1.0}
+        persist(); owner.apply_theme()
+    theme_choice.currentTextChanged.connect(lambda _:update_appearance()); text_size.currentTextChanged.connect(lambda _:update_appearance()); density.currentTextChanged.connect(lambda _:update_appearance())
+    settings.insertWidget(1, appearance_box)
     tools = FlowLayout()
     status = QLabel('Passwords are stored in Windows Credential Manager.')
     status.setWordWrap(True)
@@ -123,6 +140,10 @@ def install_productivity(owner, api):
         if path:
             Path(path).write_text(json.dumps(diagnostic_report(api.APP_DIR,api.APP_VERSION,owner.source_status),indent=2),encoding='utf-8')
             owner.toast.show_message('Diagnostic report saved without credentials, titles, URLs or local paths.',6000)
+    def check_folders():
+        errors,note=check_destinations(owner.cart, __import__('usability_core').client_is_remote(owner.config))
+        if errors: QMessageBox.warning(owner,'Download folders','\n'.join(errors)+'\n\n'+note)
+        else: QMessageBox.information(owner,'Download folders','All current destinations are available and writable.\n\n'+note)
     def restore_backup():
         worker=getattr(owner,'cart_sender',None)
         if worker and worker.isRunning():
@@ -148,6 +169,7 @@ def install_productivity(owner, api):
         except Exception as exc: QMessageBox.warning(owner,'Recovery',str(exc))
     button(tools,'Restore Cart Backup',restore_backup)
     button(tools,'Export Diagnostics',export_diagnostics)
+    button(tools,'Check Download Folders',check_folders)
 
     def source_help():
         lines=[]
@@ -241,3 +263,13 @@ def install_productivity(owner, api):
             status.setText('The saved cart could not be read. A copy was preserved. Use Restore Cart Backup to recover a previous cart.')
     marker.write_text(json.dumps({'version':api.APP_VERSION,'started':datetime.now().isoformat()}),encoding='utf-8')
     owner._session_marker=marker
+    # First-run tour uses sample data and never sends a torrent.
+    if owner.config.get('show_first_run_tour', True) and getattr(api,'BACKGROUND_SERVICES',False):
+        def tour():
+            dialog=QMessageBox(owner); dialog.setWindowTitle('Welcome to AMF'); dialog.setText('AMF searches your enabled sources and lets you route results to your torrent client.'); dialog.setInformativeText('Use Search to find releases, select rows, add them to Cart, review the destination, then send the cart to your client. A sample item is never downloaded.'); skip=dialog.addButton('Skip Tour',QMessageBox.RejectRole); nxt=dialog.addButton('Next',QMessageBox.AcceptRole); dialog.exec()
+            if dialog.clickedButton() is nxt:
+                steps=[('Search','Enter a title and press Search. Sources are queried together.'),('Cart','Select results, add them to Cart, and review folders before sending.'),('Settings','Choose themes, locations, clients, history and recovery tools here.')]
+                for title,text in steps:
+                    box=QMessageBox(owner); box.setWindowTitle(f'AMF Tour • {title}'); box.setText(text); box.addButton('Back',QMessageBox.RejectRole); box.addButton('Next',QMessageBox.AcceptRole); box.addButton('Finish',QMessageBox.DestructiveRole); box.exec()
+            owner.config['show_first_run_tour']=False; persist()
+        QTimer.singleShot(700,tour)

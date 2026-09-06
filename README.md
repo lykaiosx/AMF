@@ -1,8 +1,8 @@
-# AMF 4.11
+# AMF 4.12
 
-**[Download the Windows installer](https://github.com/lykaiosx/AMF/releases/tag/v4.11)**
+**[Download the Windows installer](https://github.com/lykaiosx/AMF/releases/tag/v4.12)**
 
-Run **AMF-4.11-Setup.exe**. It includes Python, Qt/PySide6 and all required Python
+Run **AMF-4.12-Setup.exe**. It includes Python, Qt/PySide6 and all required Python
 libraries. Installation runs offline without system Python or administrator access.
 Close AMF before upgrading. Search and downloading still require internet access.
 
@@ -67,7 +67,7 @@ Install the official [Inno Setup compiler](https://jrsoftware.org/isdl.php), the
 ```
 
 Building needs internet to prepare the pinned runtime. Output is
-`dist\AMF-4.11-Setup.exe` and `Setup.exe`. Runtime and installer binaries are excluded
+`dist\AMF-4.12-Setup.exe` and `Setup.exe`. Runtime and installer binaries are excluded
 from Git; use GitHub Releases for the ready-to-install EXE.
 
 `runtime_setup.ps1` checks the official Python archive and bundled PyPA pip zipapp
@@ -77,3 +77,4 @@ simulated transfers, cancellation, receipt recovery and UI responsiveness.
 Run `tests\test_productivity.py` for credential migration, duplicate grouping,
 saved searches, history, recovery and updater verification. Credential tests use
 temporary synthetic entries and remove them afterward; downloads are mocked.
+
