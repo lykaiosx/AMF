@@ -52,8 +52,9 @@ else:
 CONFIG_FILE = APP_DIR / "config.json"
 CART_FILE = APP_DIR / "cart.json"
 
+BACKGROUND_SERVICES = False
 APP_NAME = "AMF"
-APP_VERSION = "4.10"
+APP_VERSION = "4.11"
 APP_USER_MODEL_ID = "AMF.Desktop"
 PID_FILE = APP_DIR / "amf.pid"
 
@@ -73,7 +74,7 @@ DEFAULT_CONFIG = {
     "anime_movies_path": r"D:\Anime\Movies",
     "anime_series_path": r"D:\Anime\Series",
     "music_path": r"D:\Music",
-    "torrent_client": "Torrent Client",
+    "torrent_client": "qBittorrent",
     "client_profiles": {},
     "sources": [],
     "source_presets": []
@@ -339,6 +340,9 @@ def save_json(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
+    if path.resolve() == CONFIG_FILE.resolve():
+        from reliability import protect_config
+        value = protect_config(value, CONFIG_FILE)
     payload = json.dumps(
         value,
         indent=2,
@@ -3294,7 +3298,8 @@ def try_advertised_search_feed(
 def canonical_url_key(value):
     value = html.unescape(str(value or "").strip())
     if value.lower().startswith("magnet:"):
-        return value.lower()
+        from reliability import torrent_identity
+        return torrent_identity(value)
 
     try:
         parts = urllib.parse.urlsplit(value)
@@ -6102,7 +6107,13 @@ class AnimeDownloader(QMainWindow):
         except Exception:
             pass
         migrate_previous_state()
-        self.config = load_json(CONFIG_FILE, DEFAULT_CONFIG)
+        from reliability import hydrate_config
+        self.credential_warnings = []
+        self.config = hydrate_config(load_json(CONFIG_FILE, DEFAULT_CONFIG), warnings=self.credential_warnings)
+        if self.config.get('torrent_client') not in ('qBittorrent','Deluge','Transmission','uTorrent','Other desktop client'):
+            self.config['torrent_client'] = 'qBittorrent'
+        # Re-save immediately through credential protection to migrate old plaintext.
+        save_json(CONFIG_FILE, self.config)
         from cart_sender import replay_receipts
         self.cart = replay_receipts(load_json(CART_FILE, []), APP_DIR / 'sent-receipts.jsonl')
         self.search_results = []
@@ -6218,6 +6229,10 @@ class AnimeDownloader(QMainWindow):
         area = self.screen().availableGeometry()
         self.resize(min(1380, int(area.width() * .94)), min(860, int(area.height() * .90)))
         self.adapt_layout()
+        from productivity_ui import install_productivity
+        install_productivity(self, sys.modules[__name__])
+        if self.credential_warnings:
+            self.toast.show_message(self.credential_warnings[0], 12000)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -6406,7 +6421,7 @@ class AnimeDownloader(QMainWindow):
 
         edit_locations = QPushButton("Edit Locations")
         edit_locations.clicked.connect(
-            lambda: self.tabs.setCurrentWidget(self.settings_tab)
+            lambda: self.tabs.setCurrentIndex(3)
         )
 
         location_header.addWidget(location_note, 1)
@@ -6447,9 +6462,8 @@ class AnimeDownloader(QMainWindow):
 
         counts = {}
         for result in self.search_results:
-            name = result.get("source", "")
-            if name:
-                counts[name] = counts.get(name, 0) + 1
+            for name in result.get('available_sources', [result.get('source','')]):
+                if name: counts[name] = counts.get(name,0)+1
 
         # After a search, include every source that participated, even sources
         # that returned zero rows. Before a search, list configured sources.
@@ -6611,6 +6625,8 @@ class AnimeDownloader(QMainWindow):
                     ])
                 )
 
+        from reliability import merge_duplicates
+        deduped = merge_duplicates(deduped)
         self.search_results = deduped
         self.refresh_source_filter_options()
         self.apply_result_filters()
@@ -6648,7 +6664,7 @@ class AnimeDownloader(QMainWindow):
             if scope != "All Releases" and result.get("scope", "Unknown") != scope:
                 continue
 
-            if source_name and result.get("source") != source_name:
+            if source_name and source_name not in result.get("available_sources", [result.get("source")]):
                 continue
 
             rres = result.get("resolution") or ""
@@ -6684,7 +6700,7 @@ class AnimeDownloader(QMainWindow):
 
             values = [
                 (result.get("title", ""), result.get("title", "")),
-                (display_unknown(result.get("source")), result.get("source") or ""),
+                (" / ".join(result.get("available_sources", [result.get("source", "")])) or "Unknown", result.get("source") or ""),
                 (display_unknown(result.get("scope")), result.get("scope") or ""),
                 (display_unknown(result.get("resolution") or result.get("format")), result.get("resolution") or result.get("format") or ""),
                 (display_unknown(result.get("language")), result.get("language") or ""),
@@ -7093,7 +7109,7 @@ class AnimeDownloader(QMainWindow):
 
         self.apply_default_save_path(item)
 
-        if not any(x.get("link") == link for x in self.cart):
+        if not any(canonical_url_key(x.get("link")) == canonical_url_key(link) for x in self.cart):
             self.cart.append(item)
 
         self.manual_magnet.clear()
@@ -7366,9 +7382,8 @@ class AnimeDownloader(QMainWindow):
             except Exception:
                 return "file:" + local_path.lower()
 
-        return "link:" + str(
-            item.get("link") or ""
-        ).strip()
+        from reliability import torrent_identity
+        return torrent_identity(item)
 
 
     def add_import_items(self, items):
@@ -7739,6 +7754,15 @@ class AnimeDownloader(QMainWindow):
             self.refresh_cart()
 
     def save_cart(self):
+        if CART_FILE.exists():
+            try:
+                previous = json.loads(CART_FILE.read_text(encoding='utf-8-sig'))
+                if isinstance(previous, list) and previous:
+                    backup = APP_DIR / 'cart_backups'
+                    backup.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(CART_FILE, backup / 'cart-last-good.json')
+            except (ValueError, OSError):
+                pass
         save_json(CART_FILE, self.cart)
 
     def refresh_cart_summary_only(self):
@@ -8769,6 +8793,11 @@ class AnimeDownloader(QMainWindow):
         if not self.cart:
             return
         from cart_sender import CartSender
+        from reliability import previously_sent, torrent_identity
+        sent_before = previously_sent(APP_DIR)
+        duplicates = sum(torrent_identity(item) in sent_before for item in self.cart)
+        if duplicates and QMessageBox.question(self, 'Previously Sent', f'{duplicates} item(s) already appear in successful history. Send this cart again?', QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+            return
         self.backup_cart_snapshot('before-send')
         batch = []
         for item in self.cart:
@@ -8839,7 +8868,7 @@ class AnimeDownloader(QMainWindow):
 
     def closeEvent(self, event):
         for worker in (getattr(self, 'cart_sender', None), self.search_worker, self.test_worker,
-                       getattr(self, 'detect_worker', None), getattr(self, 'repair_worker', None)):
+                       getattr(self, 'detect_worker', None), getattr(self, 'repair_worker', None), getattr(self, '_update_worker', None)):
             if worker is not None and worker.isRunning():
                 worker.requestInterruption()
                 self.toast.show_message('Waiting for the current request to finish before closing.', 5000)
@@ -8859,6 +8888,8 @@ class AnimeDownloader(QMainWindow):
         except Exception:
             pass
 
+        if hasattr(self, '_session_marker'):
+            self._session_marker.unlink(missing_ok=True)
         super().closeEvent(event)
 
 
@@ -9203,6 +9234,8 @@ from amf_features import install_features
 install_features(AnimeDownloader)
 
 def main():
+    global BACKGROUND_SERVICES
+    BACKGROUND_SERVICES = True
     if sys.platform == 'win32':
         ctypes.windll.kernel32.CreateMutexW.restype = ctypes.c_void_p
         mutex = ctypes.windll.kernel32.CreateMutexW(None, False, 'AMF.Desktop.Running')

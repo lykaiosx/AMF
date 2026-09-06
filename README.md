@@ -1,8 +1,8 @@
-# AMF 4.10
+# AMF 4.11
 
-**[Download the Windows installer](https://github.com/lykaiosx/AMF/releases/tag/v4.10)**
+**[Download the Windows installer](https://github.com/lykaiosx/AMF/releases/tag/v4.11)**
 
-Run **AMF-4.10-Setup.exe**. It includes Python, Qt/PySide6 and all required Python
+Run **AMF-4.11-Setup.exe**. It includes Python, Qt/PySide6 and all required Python
 libraries. Installation runs offline without system Python or administrator access.
 Close AMF before upgrading. Search and downloading still require internet access.
 
@@ -15,6 +15,24 @@ emulation and has not been tested. Older and 32-bit Windows are unsupported.
 The installer is not code-signed.
 
 ## Changes
+
+- Update checks at startup (can be disabled in Settings), release notes, cancellable
+  downloads, SHA-256 verification and an explicit Install Update action.
+- Magnet info-hash duplicate grouping, including equivalent hexadecimal/base32
+  hashes. Source names appear together and source filters still work. Rows without
+  a known info hash are matched only by their exact link, never just their title.
+- Searchable, paged History tab with client, time, destination and send outcome.
+  History begins with this version. Previously sent items prompt before resending.
+- Source Health / Retry explains connection, authentication and browser checks.
+- Save, load and delete search presets, including filters and enabled sources.
+- Existing password fields migrate into Windows Credential Manager when AMF opens.
+  Credentials belong to the current Windows account; re-enter them after moving
+  configuration to a different account or device. Old external backups are not altered.
+- Interrupted-session notice, last-good cart backup, explicit backup restoration,
+  and diagnostic export using a strict allowlist. Reports exclude credentials,
+  titles, URLs, local paths and raw log contents.
+
+Existing features remain available:
 
 - Screen-aware window sizing, compact controls on smaller windows, wrapping
   action bars and scrollable pages.
@@ -49,10 +67,13 @@ Install the official [Inno Setup compiler](https://jrsoftware.org/isdl.php), the
 ```
 
 Building needs internet to prepare the pinned runtime. Output is
-`dist\AMF-4.10-Setup.exe` and `Setup.exe`. Runtime and installer binaries are excluded
+`dist\AMF-4.11-Setup.exe` and `Setup.exe`. Runtime and installer binaries are excluded
 from Git; use GitHub Releases for the ready-to-install EXE.
 
 `runtime_setup.ps1` checks the official Python archive and bundled PyPA pip zipapp
 with SHA-256. Pip and runtime libraries include their upstream license notices.
 Run `tests\test_scalability.py` with the prepared runtime to test rendering, edits,
 simulated transfers, cancellation, receipt recovery and UI responsiveness.
+Run `tests\test_productivity.py` for credential migration, duplicate grouping,
+saved searches, history, recovery and updater verification. Credential tests use
+temporary synthetic entries and remove them afterward; downloads are mocked.

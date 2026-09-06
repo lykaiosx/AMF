@@ -2,7 +2,7 @@
 #ifndef RuntimeDir
   #error RuntimeDir must point to the verified Python runtime including site-packages
 #endif
-#define AppVersion "4.10"
+#define AppVersion "4.11"
 [Setup]
 AppId=AMF
 AppName=AMF
@@ -15,7 +15,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.17763
 OutputDir=dist
-OutputBaseFilename=AMF-4.10-Setup
+OutputBaseFilename=AMF-4.11-Setup
 SetupIconFile=payload\AMF.ico
 UninstallDisplayIcon={app}\AMF.ico
 Compression=lzma2/normal
@@ -23,7 +23,7 @@ SolidCompression=yes
 WizardStyle=modern
 CloseApplications=yes
 RestartApplications=no
-AppMutex=AMF.Desktop.Running
+AppMutex={code:GetAppMutex}
 Uninstallable=not IsTestInstall
 CreateUninstallRegKey=not IsTestInstall
 
@@ -48,6 +48,12 @@ Filename: "{app}\runtime\pythonw.exe"; Parameters: """{app}\start_amf.py"""; Wor
 function IsTestInstall: Boolean;
 begin
   Result := ExpandConstant('{param:TESTINSTALL|0}') = '1';
+end;
+
+function GetAppMutex(Param: String): String;
+begin
+  if IsTestInstall then Result := ''
+  else Result := 'AMF.Desktop.Running';
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

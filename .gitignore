@@ -13,3 +13,8 @@ amf.pid
 sent-receipts.jsonl
 dist/
 /Setup.exe
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+session-active.json
+updates/

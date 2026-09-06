@@ -1,3 +1,11 @@
+AMF 4.11
+- GitHub update checks, release notes and checksum-verified installer downloads.
+- Info-hash duplicate groups with all available sources and history resend prompts.
+- Searchable paged transfer history and saved search presets.
+- Windows Credential Manager password migration; no new plaintext password saves.
+- Source health explanations, retry actions, session recovery and private diagnostics.
+- Previous installer, layout, cart performance, provider and routing features retained.
+
 AMF 4.10
 - Offline Inno Setup EXE includes Python, Qt and application libraries.
 - Screen-aware size, smaller controls, wrapping actions and scrollable pages.

@@ -318,6 +318,11 @@ def install_features(cls):
         self.save_cart()
         self.refresh_cart()
         self.toast.show_message("Opened in client. Confirm its save folders; cart items were retained.", 6000)
+        from reliability import record_history
+        import sys
+        root = sys.modules[cls.__module__].APP_DIR
+        for item in self.cart:
+            record_history(root, item, name, item.get('cart_status', 'Opened'), item.get('last_error', ''))
 
     for name, method in list(locals().items()):
         if callable(method) and name not in ("cls", "original_test"):

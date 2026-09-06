@@ -1,6 +1,7 @@
 """Serial, cancellable client transfers outside the UI thread; durable receipts."""
 import json
 import os
+from reliability import record_history, error_guidance
 from pathlib import Path
 from PySide6.QtCore import QThread, Signal
 
@@ -60,11 +61,20 @@ class CartSender(QThread):
                         receipts.write(json.dumps({'sent': key}) + '\n')
                         receipts.flush()
                         os.fsync(receipts.fileno())
+                        try:
+                            record_history(self.receipt_path.parent, item, getattr(client, 'name', 'qBittorrent'), 'Sent')
+                        except Exception as history_error:
+                            self.failed.emit('Torrent sent, but history could not be saved: ' + str(history_error))
                         self.progress.emit(key, 'Sent', '')
                     except Exception as exc:
-                        self.progress.emit(key, 'Failed', str(exc))
+                        category, action = error_guidance(exc)
+                        detail = category + ': ' + str(exc) + '\n' + action
+                        try: record_history(self.receipt_path.parent, item, getattr(client, 'name', 'qBittorrent'), 'Failed', detail)
+                        except Exception: pass
+                        self.progress.emit(key, 'Failed', detail)
         except Exception as exc:
-            self.failed.emit(str(exc))
+            category,action=error_guidance(exc)
+            self.failed.emit(category + ': ' + str(exc) + '\n' + action)
         finally:
             close = getattr(client, 'close', None)
             if callable(close):

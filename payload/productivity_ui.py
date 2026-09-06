@@ -1,0 +1,243 @@
+"""History, presets, recovery and explicit update installation controls."""
+import json
+import os
+import shutil
+import subprocess
+from datetime import datetime
+from pathlib import Path
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtWidgets import (QWidget,QVBoxLayout,QHBoxLayout,QPushButton,QLineEdit,QLabel,QComboBox,
+    QInputDialog,QMessageBox,QFileDialog,QCheckBox,QTableWidget,QTableWidgetItem,QAbstractItemView)
+from reliability import history_rows, diagnostic_report, error_guidance, previously_sent, torrent_identity
+from cart_sender import replay_receipts
+from scalable_ui import FlowLayout
+from update_manager import UpdateWorker
+
+
+def install_productivity(owner, api):
+    owner._update_worker = None
+    owner._update_asset = None
+    owner._update_path = None
+    settings = owner.settings_tab.layout()
+    tools = FlowLayout()
+    status = QLabel('Passwords are stored in Windows Credential Manager.')
+    status.setWordWrap(True)
+    settings.addWidget(status)
+
+    def persist(): api.save_json(api.CONFIG_FILE, owner.config)
+    def button(layout, text, handler):
+        item = QPushButton(text)
+        item.clicked.connect(handler)
+        layout.addWidget(item)
+        return item
+
+    # Search presets contain filters and enabled source names, never passwords.
+    presets = owner.config.setdefault('saved_searches', {})
+    preset_row = FlowLayout()
+    preset_choice = QComboBox()
+    preset_row.addWidget(preset_choice)
+    def choices():
+        preset_choice.clear()
+        preset_choice.addItems(['Saved searches…'] + sorted(presets))
+    choices()
+    def save_preset():
+        name, ok = QInputDialog.getText(owner, 'Save Search', 'Name for this search and its filters:')
+        name = name.strip()
+        if not ok or not name: return
+        if name in presets and QMessageBox.question(owner,'Replace Search','Replace this saved search?') != QMessageBox.Yes: return
+        presets[name] = dict(query=owner.search_input.text(), scope=owner.scope_filter.currentText(),
+            resolution=owner.resolution_filter.currentText(), min_seeds=owner.min_seeders.value(), max_gb=owner.max_size_gb.value(),
+            sources=[s['name'] for s in owner.config.get('sources',[]) if s.get('enabled')])
+        persist()
+        choices()
+        preset_choice.setCurrentText(name)
+    def load_preset():
+        preset = presets.get(preset_choice.currentText())
+        if not preset: return
+        owner.search_input.setText(preset.get('query',''))
+        owner.scope_filter.setCurrentText(preset.get('scope','All Releases'))
+        owner.resolution_filter.setCurrentText(preset.get('resolution','Any'))
+        owner.min_seeders.setValue(preset.get('min_seeds',0))
+        owner.max_size_gb.setValue(preset.get('max_gb',0))
+        for source in owner.config.get('sources',[]): source['enabled'] = source['name'] in preset.get('sources',[])
+        persist()
+        owner.refresh_sources()
+        owner.toast.show_message('Saved search loaded. Press Search when ready.',4000)
+    def delete_preset():
+        name = preset_choice.currentText()
+        if name in presets and QMessageBox.question(owner,'Delete Saved Search',f'Delete {name}?') == QMessageBox.Yes:
+            del presets[name]
+            persist()
+            choices()
+    button(preset_row,'Save Search',save_preset)
+    button(preset_row,'Load Search',load_preset)
+    button(preset_row,'Delete Saved Search',delete_preset)
+    owner.anime_tab.layout().insertLayout(2,preset_row)
+
+    history = QWidget()
+    history_layout = QVBoxLayout(history)
+    find = QLineEdit()
+    find.setPlaceholderText('Search history by title or client…')
+    history_layout.addWidget(find)
+    table = QTableWidget(0,6)
+    table.setHorizontalHeaderLabels(['Time (UTC)','Title','Client','Save Location','Status','Details'])
+    table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+    table.setSelectionBehavior(QAbstractItemView.SelectRows)
+    table.setColumnWidth(1,320)
+    table.setColumnWidth(3,250)
+    table.setColumnWidth(5,300)
+    history_layout.addWidget(table,1)
+    history_controls = FlowLayout()
+    history_layout.addLayout(history_controls)
+    page = [0]
+    page_label = QLabel()
+    def refresh_history():
+        rows = history_rows(api.APP_DIR,find.text(),page[0]*200)
+        table.setRowCount(len(rows))
+        for r,row in enumerate(rows):
+            for c,value in enumerate(row):
+                item=QTableWidgetItem(str(value or ''))
+                item.setToolTip(str(value or ''))
+                table.setItem(r,c,item)
+        page_label.setText(f'Page {page[0]+1} • {len(rows)} records')
+        previous.setEnabled(page[0]>0)
+        following.setEnabled(len(rows)==200)
+    def turn_page(delta):
+        page[0]=max(0,page[0]+delta)
+        refresh_history()
+    previous=button(history_controls,'Previous',lambda:turn_page(-1))
+    following=button(history_controls,'Next',lambda:turn_page(1))
+    button(history_controls,'Refresh History',refresh_history)
+    history_controls.addWidget(page_label)
+    search_timer=QTimer(owner)
+    search_timer.setSingleShot(True)
+    search_timer.timeout.connect(lambda:turn_page(-page[0]))
+    find.textChanged.connect(lambda:search_timer.start(200))
+    owner.tabs.addTab(history,'History')
+    owner.tabs.currentChanged.connect(lambda i: refresh_history() if owner.tabs.widget(i) is history else None)
+    owner.refresh_history=refresh_history
+    refresh_history()
+
+    def export_diagnostics():
+        path,_=QFileDialog.getSaveFileName(owner,'Export Private Diagnostics','AMF-diagnostics.json','JSON (*.json)')
+        if path:
+            Path(path).write_text(json.dumps(diagnostic_report(api.APP_DIR,api.APP_VERSION,owner.source_status),indent=2),encoding='utf-8')
+            owner.toast.show_message('Diagnostic report saved without credentials, titles, URLs or local paths.',6000)
+    def restore_backup():
+        worker=getattr(owner,'cart_sender',None)
+        if worker and worker.isRunning():
+            QMessageBox.information(owner,'Recovery','Cancel sending and wait for the current request before restoring a cart.')
+            return
+        backups=sorted((api.APP_DIR/'cart_backups').glob('cart-*.json'),reverse=True)
+        if not backups:
+            QMessageBox.information(owner,'Recovery','No cart backups are available yet.')
+            return
+        name,ok=QInputDialog.getItem(owner,'Restore Cart','Choose a saved cart:',[p.name for p in backups],0,False)
+        if not ok: return
+        try:
+            restored=json.loads(next(p for p in backups if p.name==name).read_text(encoding='utf-8-sig'))
+            if not isinstance(restored,list) or not all(isinstance(x,dict) for x in restored): raise ValueError('Invalid cart backup')
+            sent=previously_sent(api.APP_DIR)
+            restored=[item for item in replay_receipts(restored,api.APP_DIR/'sent-receipts.jsonl') if torrent_identity(item) not in sent]
+            if QMessageBox.question(owner,'Restore Cart',f'Restore {len(restored)} unsent items? Your current cart will be backed up first.') != QMessageBox.Yes: return
+            owner.backup_cart_snapshot('before-restore')
+            owner.cart=restored
+            owner.save_cart()
+            owner.refresh_cart()
+            status.setText('Cart restored. Previously confirmed sends were excluded.')
+        except Exception as exc: QMessageBox.warning(owner,'Recovery',str(exc))
+    button(tools,'Restore Cart Backup',restore_backup)
+    button(tools,'Export Diagnostics',export_diagnostics)
+
+    def source_help():
+        lines=[]
+        for name,(state,message) in owner.source_status.items():
+            category,action=error_guidance(message)
+            healthy=state=='OK' and category!='No matching results'
+            lines.append(f'{name}: {"Connected" if healthy else category}\n{message}\n{action if not healthy else ""}')
+        dialog=QMessageBox(owner)
+        dialog.setWindowTitle('Source Health')
+        dialog.setText('Source health and next steps')
+        dialog.setDetailedText('\n\n'.join(lines) or 'Run a search or Test All Sources first.')
+        retry=dialog.addButton('Retry Search',QMessageBox.ActionRole)
+        dialog.addButton(QMessageBox.Close)
+        dialog.exec()
+        if dialog.clickedButton() is retry and owner.search_btn.isEnabled(): owner.search_sources()
+    button(tools,'Source Health / Retry',source_help)
+    button(owner.sources_tab.layout(),'Source Health / Retry',source_help)
+    settings.addLayout(tools)
+
+    update_row=FlowLayout()
+    settings.addLayout(update_row)
+    automatic=QCheckBox('Check GitHub for updates at startup')
+    automatic.setChecked(owner.config.get('automatic_update_checks',True))
+    def change_auto(value):
+        owner.config['automatic_update_checks']=bool(value)
+        persist()
+    automatic.toggled.connect(change_auto)
+    settings.addWidget(automatic)
+    update_status=QLabel('Update checks contact only the AMF GitHub release API. Installation always asks first.')
+    update_status.setWordWrap(True)
+    settings.addWidget(update_status)
+
+    def worker_finished():
+        check.setEnabled(True)
+        download.setEnabled(owner._update_asset is not None)
+        cancel.setEnabled(False)
+    def result(data):
+        if 'path' in data:
+            owner._update_path=data['path']
+            install.setEnabled(True)
+            update_status.setText('Installer downloaded and SHA-256 verified. Choose Install Update when ready.')
+        else:
+            owner._update_asset=data.get('asset')
+            owner._update_notes=data.get('notes','')
+            update_status.setText(f"Update {data['version']} available. Download it below." if owner._update_asset else 'You have the latest stable version.')
+    def begin(asset=None):
+        if owner._update_worker and owner._update_worker.isRunning(): return
+        if owner._update_worker: owner._update_worker.deleteLater()
+        owner._update_worker=UpdateWorker(api.APP_VERSION,api.APP_DIR/'updates',asset,owner)
+        owner._update_worker.result.connect(result)
+        owner._update_worker.error.connect(lambda error:update_status.setText('Update failed: '+error+' • Check your connection and retry.'))
+        owner._update_worker.progress.connect(lambda value:update_status.setText(f'Downloading installer: {value}%'))
+        owner._update_worker.finished.connect(worker_finished)
+        check.setEnabled(False)
+        download.setEnabled(False)
+        cancel.setEnabled(True)
+        update_status.setText('Downloading…' if asset else 'Checking GitHub…')
+        owner._update_worker.start()
+    def install_update():
+        if not owner._update_path: return
+        import hashlib
+        with Path(owner._update_path).open('rb') as installer:
+            digest='sha256:'+hashlib.file_digest(installer,'sha256').hexdigest()
+        if not owner._update_asset or digest != owner._update_asset['digest']:
+            QMessageBox.warning(owner,'Update','The installer changed after download. Download it again.')
+            return
+        if QMessageBox.question(owner,'Install Update','Close AMF and open the verified update installer now?') != QMessageBox.Yes: return
+        if owner.close():
+            subprocess.Popen([owner._update_path],shell=False)
+    check=button(update_row,'Check for Updates',lambda:begin())
+    download=button(update_row,'Download Update',lambda:begin(owner._update_asset))
+    download.setEnabled(False)
+    button(update_row,'Release Notes',lambda:QMessageBox.information(owner,'Release Notes',getattr(owner,'_update_notes','Check for updates first.')))
+    cancel=button(update_row,'Cancel Download',lambda:owner._update_worker.requestInterruption() if owner._update_worker else None)
+    cancel.setEnabled(False)
+    install=button(update_row,'Install Update',install_update)
+    install.setEnabled(False)
+    if getattr(api,'BACKGROUND_SERVICES',False) and automatic.isChecked(): QTimer.singleShot(3000,lambda:begin())
+
+    marker=api.APP_DIR/'session-active.json'
+    if marker.exists():
+        status.setText('An interrupted session was detected. Unsent cart items were recovered; Restore Cart Backup is available below.')
+    if api.CART_FILE.exists():
+        try:
+            saved=json.loads(api.CART_FILE.read_text(encoding='utf-8-sig'))
+            if not isinstance(saved,list): raise ValueError('Invalid cart data')
+        except (ValueError,OSError):
+            backup=api.APP_DIR/'cart_backups'
+            backup.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(api.CART_FILE,backup/('corrupt-cart-'+datetime.now().strftime('%Y%m%d-%H%M%S')+'.json'))
+            status.setText('The saved cart could not be read. A copy was preserved. Use Restore Cart Backup to recover a previous cart.')
+    marker.write_text(json.dumps({'version':api.APP_VERSION,'started':datetime.now().isoformat()}),encoding='utf-8')
+    owner._session_marker=marker
