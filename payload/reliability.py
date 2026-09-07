@@ -61,6 +61,8 @@ def history_connection(root):
     connection = sqlite3.connect(str(Path(root) / 'history.sqlite3'), timeout=10)
     connection.execute('PRAGMA journal_mode=WAL')
     connection.execute('CREATE TABLE IF NOT EXISTS events (event_id TEXT PRIMARY KEY, time TEXT, title TEXT, identity TEXT, client TEXT, destination TEXT, status TEXT, error TEXT)')
+    if 'payload' not in {row[1] for row in connection.execute('PRAGMA table_info(events)')}:
+        connection.execute("ALTER TABLE events ADD COLUMN payload TEXT NOT NULL DEFAULT ''")
     connection.execute('CREATE INDEX IF NOT EXISTS history_identity ON events(identity, status)')
     return connection
 
@@ -68,9 +70,10 @@ def history_connection(root):
 def record_history(root, item, client, status, error=''):
     key = item.get('_queue_id') or hashlib.sha256((item.get('link','') + item.get('title','')).encode()).hexdigest()
     with history_connection(root) as db:
-        db.execute('INSERT OR REPLACE INTO events VALUES (?,?,?,?,?,?,?,?)',
+        saved = {k:item[k] for k in ('title','source','link','info_hash','type','category','kind','scope','save_path','save_path_custom','local_torrent_path') if k in item}
+        db.execute('INSERT OR REPLACE INTO events (event_id,time,title,identity,client,destination,status,error,payload) VALUES (?,?,?,?,?,?,?,?,?)',
             (key + ':' + status, datetime.now(timezone.utc).isoformat(timespec='seconds'), item.get('title',''),
-             torrent_identity(item), client, item.get('save_path',''), status, str(error)))
+             torrent_identity(item), client, item.get('save_path',''), status, str(error), json.dumps(saved)))
     db.close()
 
 
@@ -80,6 +83,37 @@ def history_rows(root, query='', offset=0, limit=200):
                           ('%'+query+'%', '%'+query+'%', limit, offset)).fetchall()
     db.close()
     return rows
+
+
+def history_entries(root, query='', offset=0, limit=200):
+    with history_connection(root) as db:
+        db.row_factory = sqlite3.Row
+        rows = [dict(row) for row in db.execute('SELECT * FROM events WHERE title LIKE ? OR client LIKE ? ORDER BY time DESC LIMIT ? OFFSET ?',
+            ('%'+query+'%', '%'+query+'%',limit,offset))]
+    db.close()
+    return rows
+
+
+def history_download(entry):
+    try: saved = json.loads(entry.get('payload') or '{}')
+    except (TypeError, ValueError): saved = {}
+    identity = entry.get('identity') or ''
+    if not saved.get('link') and not saved.get('local_torrent_path'):
+        if identity.startswith('btih:'):
+            saved['link'] = 'magnet:?xt=urn:btih:'+identity[5:]
+            saved['info_hash'] = identity[5:]
+        elif identity.startswith('link:'):
+            saved['link'] = identity[5:]
+        else:
+            raise ValueError('This old history entry has no saved torrent link. Search for it once to save a reusable entry.')
+    saved['title'] = entry.get('title') or saved.get('title') or 'History download'
+    saved['save_path'] = entry.get('destination') or saved.get('save_path') or ''
+    saved['save_path_custom'] = True
+    if not saved['save_path']:
+        raise ValueError('This history entry has no saved download folder.')
+    if '[yts]' in saved['title'].lower() and not saved.get('source'):
+        saved['source'] = 'yts.gg'
+    return saved
 
 
 def previously_sent(root):

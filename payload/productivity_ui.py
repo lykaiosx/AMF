@@ -8,7 +8,7 @@ from pathlib import Path
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import (QWidget,QVBoxLayout,QHBoxLayout,QPushButton,QLineEdit,QLabel,QComboBox,
     QInputDialog,QMessageBox,QFileDialog,QCheckBox,QTableWidget,QTableWidgetItem,QAbstractItemView,QGroupBox)
-from reliability import history_rows, diagnostic_report, error_guidance, previously_sent, torrent_identity
+from reliability import history_rows, history_entries, history_download, diagnostic_report, error_guidance, previously_sent, torrent_identity
 from cart_sender import replay_receipts
 from scalable_ui import FlowLayout
 from usability_core import PALETTES, validate_theme, check_destinations, portable_settings
@@ -53,6 +53,19 @@ def install_productivity(owner, api):
     status = QLabel('Passwords are stored in Windows Credential Manager.')
     status.setWordWrap(True)
     settings.addWidget(status)
+    def check_transfers():
+        if owner.config.get('torrent_client', 'qBittorrent') != 'qBittorrent':
+            QMessageBox.information(owner, 'Download status', 'Open your selected torrent client to inspect its download and tracker status.')
+            return
+        if getattr(owner, '_transfer_status_worker', None) is not None and owner._transfer_status_worker.isRunning():
+            return
+        from transfer_status import TransferStatusWorker
+        owner._transfer_status_worker = TransferStatusWorker(owner.config.get('qbittorrent', {}), owner)
+        owner._transfer_status_worker.report.connect(lambda text: QMessageBox.information(owner, 'qBittorrent download status', text))
+        owner._transfer_status_worker.start()
+    transfer_check = QPushButton('Check Download Status')
+    transfer_check.clicked.connect(check_transfers)
+    settings.addWidget(transfer_check, 0, Qt.AlignLeft)
 
     def persist(): api.save_json(api.CONFIG_FILE, owner.config)
     def button(layout, text, handler):
@@ -106,10 +119,16 @@ def install_productivity(owner, api):
 
     history = QWidget()
     history_layout = QVBoxLayout(history)
+    history_note = QLabel('Sent means accepted by the torrent client. Use Settings → Check Download Status to inspect downloading or stalled items.')
+    history_note.setWordWrap(True)
+    history_layout.addWidget(history_note)
     find = QLineEdit()
     find.setPlaceholderText('Search history by title or client…')
     history_layout.addWidget(find)
-    table = QTableWidget(0,6)
+    from selection_ui import ToggleRowTable
+    table = ToggleRowTable(0,6)
+    table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+    table.setSelectionBehavior(QAbstractItemView.SelectRows)
     table.setHorizontalHeaderLabels(['Time (UTC)','Title','Client','Save Location','Status','Details'])
     table.setEditTriggers(QAbstractItemView.NoEditTriggers)
     table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -122,12 +141,14 @@ def install_productivity(owner, api):
     page = [0]
     page_label = QLabel()
     def refresh_history():
-        rows = history_rows(api.APP_DIR,find.text(),page[0]*200)
+        entries = history_entries(api.APP_DIR,find.text(),page[0]*200)
+        rows = [[entry.get(key) for key in ('time','title','client','destination','status','error')] for entry in entries]
         table.setRowCount(len(rows))
         for r,row in enumerate(rows):
             for c,value in enumerate(row):
                 item=QTableWidgetItem(str(value or ''))
                 item.setToolTip(str(value or ''))
+                item.setData(Qt.UserRole, entries[r])
                 table.setItem(r,c,item)
         page_label.setText(f'Page {page[0]+1} • {len(rows)} records')
         previous.setEnabled(page[0]>0)
@@ -138,6 +159,57 @@ def install_productivity(owner, api):
     previous=button(history_controls,'Previous',lambda:turn_page(-1))
     following=button(history_controls,'Next',lambda:turn_page(1))
     button(history_controls,'Refresh History',refresh_history)
+    history_status = QLabel('')
+    history_status.setWordWrap(True)
+    history_layout.addWidget(history_status)
+    def resend_history():
+        if any(getattr(owner, key, None) is not None and getattr(owner, key).isRunning() for key in ('history_sender','cart_sender')):
+            history_status.setText('Wait for the current send to finish.')
+            return
+        indexes = table.selectionModel().selectedRows()
+        if not indexes:
+            history_status.setText('Select a history row first.')
+            return
+        import uuid
+        from cart_sender import CartSender
+        batch, seen = [], set()
+        try:
+            for index in indexes:
+                entry = table.item(index.row(),0).data(Qt.UserRole)
+                item = history_download(entry)
+                identity = torrent_identity(item)
+                if identity in seen: continue
+                seen.add(identity)
+                item['_queue_id'] = uuid.uuid4().hex
+                source = owner.source_config_for_result(item)
+                if '[yts]' in item['title'].lower():
+                    source = next((s for s in owner.config.get('sources',[]) if api.source_provider_identity(s)=='yts'), {'builtin_id':'yts','url':'https://yts.gg'})
+                batch.append((item, dict(source)))
+        except Exception as exc:
+            history_status.setText(str(exc))
+            return
+        profile = dict(owner.config.get('qbittorrent',{}))
+        def client_factory():
+            return api.qbittorrentapi.Client(host=profile.get('host','127.0.0.1'),port=int(profile.get('port',8080)),
+                username=profile.get('username',''),password=profile.get('password',''),REQUESTS_ARGS={'timeout':(10,30)})
+        owner.history_sender = CartSender(client_factory, batch, api.APP_DIR/'history-resend-receipts.jsonl',api,owner)
+        outcomes=[]
+        fatal=[]
+        def progress(key,state,error):
+            if state in ('Sent','Failed'): outcomes.append((state,error))
+            history_status.setText(f'{len(outcomes)} of {len(batch)} processed. '+(error or state))
+        def finished():
+            resend.setEnabled(True)
+            refresh_history()
+            failed=[error for state,error in outcomes if state=='Failed']
+            history_status.setText(f'{sum(state=="Sent" for state,_ in outcomes)} added to qBittorrent.'+ (' '+(failed+fatal)[0] if failed or fatal else ''))
+        owner.history_sender.progress.connect(progress)
+        owner.history_sender.failed.connect(lambda error: (fatal.append(error), history_status.setText(error)))
+        owner.history_sender.finished.connect(finished)
+        resend.setEnabled(False)
+        history_status.setText('Adding selected history entries to qBittorrent…')
+        owner.history_sender.start()
+    resend=button(history_controls,'Add to qBittorrent',resend_history)
     history_controls.addWidget(page_label)
     search_timer=QTimer(owner)
     search_timer.setSingleShot(True)

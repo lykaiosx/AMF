@@ -19,3 +19,4 @@ dist/
 session-active.json
 updates/
 browser_sessions/
+history-resend-receipts.jsonl

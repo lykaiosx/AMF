@@ -28,7 +28,13 @@ def theme_css(base, palette, text_size=13, density=1):
     # Keep text readable on accent-coloured controls, including high contrast.
     rgb=[int(palette['accent'][i:i+2],16) for i in (1,3,5)]
     foreground='#000000' if sum(rgb)>430 else '#ffffff'
+    selection = '#dce8f7' if palette['background'] == PALETTES['Light']['background'] else '#293548'
+    checkmark = (Path(__file__).parent/'checkmark.svg').as_posix()
     return css+f'''
+        QAbstractItemView {{ selection-background-color: {selection}; selection-color: {palette['text']}; }}
+        QAbstractItemView::item:selected {{ background: {selection}; color: {palette['text']}; }}
+        QCheckBox::indicator:checked {{ background: #22c55e; border: 2px solid #86efac; image: url("{checkmark}"); }}
+        QCheckBox::indicator:unchecked {{ background: {palette['surface']}; border: 2px solid {palette['muted']}; }}
         QLabel, QCheckBox {{ background: transparent; }}
         QLabel#versionBadge {{ color: {foreground}; background: {palette['accent']}; }}
         QPushButton#primaryButton {{ color: {foreground}; }}

@@ -55,7 +55,7 @@ CART_FILE = APP_DIR / "cart.json"
 
 BACKGROUND_SERVICES = False
 APP_NAME = "AMF"
-APP_VERSION = "4.14"
+APP_VERSION = "4.15"
 APP_USER_MODEL_ID = "AMF.Desktop"
 PID_FILE = APP_DIR / "amf.pid"
 
@@ -187,7 +187,7 @@ def source_provider_identity(source):
         source.get("builtin_id") or ""
     ).strip().lower()
 
-    if builtin_id in {"nyaa", "1377x", "yts", "piratebay", "animetosho", "annas_archive", "eztv"}:
+    if builtin_id in {"nyaa", "1377x", "yts", "piratebay", "animetosho", "annas_archive", "eztv", "fitgirl"}:
         return builtin_id
 
     url = str(
@@ -202,7 +202,7 @@ def source_provider_identity(source):
     except Exception:
         hostname = ""
 
-    for domain, identity in [("animetosho.org", "animetosho"), ("annas-archive.gl", "annas_archive"), ("eztvx.to", "eztv")]:
+    for domain, identity in [("animetosho.org", "animetosho"), ("annas-archive.gl", "annas_archive"), ("eztvx.to", "eztv"), ("fitgirl-repacks.site", "fitgirl")]:
         if hostname == domain or hostname.endswith("." + domain):
             return identity
     if hostname in ("thepiratebay.org", "www.thepiratebay.org", "apibay.org"):
@@ -273,6 +273,10 @@ BUILTIN_DEFAULT_SOURCES.append({"builtin_id": "piratebay", "name": "The Pirate B
     "type": "HTML Search", "search_mode": "Search Endpoint",
     "url": "https://thepiratebay.org/search.php?q={query}&cat=0",
     "enabled": True, "query_param": "", "mappings": {}, "headers": {}})
+BUILTIN_DEFAULT_SOURCES.append({'builtin_id': 'fitgirl', 'name': 'FitGirl Repacks',
+    'type': 'HTML Search', 'search_mode': 'Static Feed',
+    'url': 'https://fitgirl-repacks.site/all-my-repacks-a-z/',
+    'enabled': True, 'query_param': '', 'mappings': {}, 'headers': {}})
 
 for identity, name, url, kind in [
     ("animetosho", "Anime Tosho", "https://feed.animetosho.org/rss2?only_tor=1&q={query}", "RSS / Atom"),
@@ -5373,6 +5377,9 @@ def fetch_source(
     fuzzy_threshold=70,
     local_query=None
 ):
+    if source_provider_identity(source) == 'fitgirl':
+        from fitgirl_provider import fetch_fitgirl
+        return fetch_fitgirl(source, query if local_query is None else local_query, timeout)
     if source_provider_identity(source) == "yts":
         from yts_provider import fetch_yts
         return fetch_yts(source, query if local_query is None else local_query, timeout)
@@ -6249,8 +6256,10 @@ class AnimeDownloader(QMainWindow):
 
     def adapt_layout(self):
         scale = max(.80, min(1.0, self.width() / 1380, self.height() / 860))
-        if getattr(self, '_ui_scale', None) == round(scale, 2):
+        ratio = self.devicePixelRatioF()
+        if getattr(self, '_ui_scale', None) == round(scale, 2) and getattr(self, '_ui_pixel_ratio', None) == ratio:
             return
+        self._ui_pixel_ratio = ratio
         self._ui_scale = round(scale, 2)
         self.apply_theme()
         for table in self.findChildren(QTableView):
@@ -6348,7 +6357,9 @@ class AnimeDownloader(QMainWindow):
         self.search_status.setObjectName("mutedText")
         layout.addWidget(self.search_status)
 
-        self.results_table = QTableWidget(0, 15)
+        from selection_ui import ToggleRowTable
+        self.results_table = ToggleRowTable(0, 15)
+        self.results_table.doubleClickChecks = True
         self.results_table.setHorizontalHeaderLabels([
             "Select", "Title", "Source", "Release Scope", "Resolution / Format", "Language",
             "Size", "Seeds", "Peers", "Downloads", "Trusted", "Remake", "Date",
@@ -7899,7 +7910,8 @@ class AnimeDownloader(QMainWindow):
 
         layout.addWidget(preset_box)
 
-        self.sources_table = QTableWidget(0, 7)
+        from selection_ui import ToggleRowTable
+        self.sources_table = ToggleRowTable(0, 7)
         self.sources_table.setHorizontalHeaderLabels([
             "Enabled", "Name", "Type", "Mode", "Status", "Query Param", "Address"
         ])
@@ -7911,7 +7923,6 @@ class AnimeDownloader(QMainWindow):
         )
         self.sources_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.sources_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.sources_table.doubleClicked.connect(self.edit_selected_source)
         layout.addWidget(self.sources_table, 1)
 
         controls = QHBoxLayout()
@@ -8918,7 +8929,7 @@ class AnimeDownloader(QMainWindow):
 
     def closeEvent(self, event):
         for worker in (getattr(self, 'cart_sender', None), self.search_worker, self.test_worker,
-                       getattr(self, 'detect_worker', None), getattr(self, 'repair_worker', None), getattr(self, '_update_worker', None)):
+                       getattr(self, 'detect_worker', None), getattr(self, 'repair_worker', None), getattr(self, '_update_worker', None), getattr(self, '_transfer_status_worker', None), getattr(self, 'history_sender', None)):
             if worker is not None and worker.isRunning():
                 worker.requestInterruption()
                 self.toast.show_message('Waiting for the current request to finish before closing.', 5000)
@@ -9309,7 +9320,10 @@ class AnimeDownloader(QMainWindow):
                 self._brand_pixmaps[filename] = QPixmap.fromImage(square_logo(Path(__file__).parent / filename))
             pixmap = self._brand_pixmaps.get(filename)
             if pixmap is not None:
-                logo.setPixmap(pixmap.scaled(42, 42, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                ratio = logo.devicePixelRatioF()
+                sharp = pixmap.scaled(round(42 * ratio), round(42 * ratio), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                sharp.setDevicePixelRatio(ratio)
+                logo.setPixmap(sharp)
                 self.setWindowIcon(QIcon(pixmap))
 
 
