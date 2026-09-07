@@ -1,8 +1,8 @@
-# AMF 4.13
+# AMF 4.14
 
-**[Download the Windows installer](https://github.com/lykaiosx/AMF/releases/tag/v4.13)**
+**[Download the Windows installer](https://github.com/lykaiosx/AMF/releases/tag/v4.14)**
 
-Run **AMF-4.13-Setup.exe**. It includes Python, Qt/PySide6 and all required Python
+Run **AMF-4.14-Setup.exe**. It includes Python, Qt/PySide6 and all required Python
 libraries. Installation runs offline without system Python or administrator access.
 Close AMF before upgrading. Search and downloading still require internet access.
 
@@ -15,6 +15,15 @@ emulation and has not been tested. Older and 32-bit Windows are unsupported.
 The installer is not code-signed.
 
 ## Changes
+
+- Read EZTV or Anna's Archive once after completing site verification. Later searches reuse
+  that browser session in the background. Cookies are saved locally; idle pages release
+  rendering resources after one minute. A site can still require verification again when
+  its session expires. Disabled sources are not searched.
+
+- YTS sends verified torrent files, including metadata, instead of trackerless magnets. Older saved YTS magnets use the same path; failed fetches stay in the cart for retry.
+
+- Proportional square-canvas app icons and matching setup, shortcut and uninstall artwork.
 
 - Readable version badge and transparent label backgrounds in all themes, including after resizing.
 - Supplied white/black brand logos follow the theme. Tabs end with History, then Settings.
@@ -76,7 +85,7 @@ Install the official [Inno Setup compiler](https://jrsoftware.org/isdl.php), the
 ```
 
 Building needs internet to prepare the pinned runtime. Output is
-`dist\AMF-4.13-Setup.exe` and `Setup.exe`. Runtime and installer binaries are excluded
+`dist\AMF-4.14-Setup.exe` and `Setup.exe`. Runtime and installer binaries are excluded
 from Git; use GitHub Releases for the ready-to-install EXE.
 
 `runtime_setup.ps1` checks the official Python archive and bundled PyPA pip zipapp

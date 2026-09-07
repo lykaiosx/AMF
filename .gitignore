@@ -18,3 +18,4 @@ dist/
 *.sqlite3-shm
 session-active.json
 updates/
+browser_sessions/

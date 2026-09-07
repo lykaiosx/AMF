@@ -1,3 +1,10 @@
+AMF 4.14
+- Reuse EZTV and Anna's Archive browser verification sessions automatically on later searches. Idle pages release renderer resources after one minute; expired sessions require user verification again.
+- Send hash-verified YTS torrent metadata directly to clients, including saved magnets from older carts. Failed metadata fetches stay in the cart for retry.
+- Preserve the supplied artwork proportions on square transparent icon canvases.
+- Replace the old setup, shortcut and uninstall icons with the supplied logo at seven Windows icon sizes.
+- Keep the theme-specific white/black application logos consistent.
+
 AMF 4.13
 - Fixed version badge contrast, transparent labels, and theme preservation after resizing.
 - Added theme-specific supplied logos; History now precedes Settings as the last tab.

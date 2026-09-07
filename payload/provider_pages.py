@@ -1,8 +1,8 @@
 """Exact provider-page parsing and user-visible browser fallback."""
 import re
-from urllib.parse import urljoin, urlsplit, quote, urlencode
+from urllib.parse import urljoin, urlsplit, quote, unquote, urlencode, parse_qs
 from bs4 import BeautifulSoup
-from PySide6.QtCore import Signal, QUrl
+from PySide6.QtCore import Signal, QUrl, QTimer
 from PySide6.QtGui import QDoubleValidator, QIntValidator
 from PySide6.QtWidgets import QLineEdit, QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QMessageBox
 
@@ -95,22 +95,107 @@ def parse_provider_page(source, content, url):
 
 
 class ProviderPageDialog(QDialog):
-    def __init__(self, parent, source, query):
+    def __init__(self, parent, source, query, storage=None):
         super().__init__(parent)
         from PySide6.QtWebEngineWidgets import QWebEngineView
+        from PySide6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
         self.source = source
         self.rows = None
+        self.callback = None
+        self.generation = 0
         self.setWindowTitle('Read Provider Page — '+source.get('name',''))
         self.resize(1100,800)
         layout=QVBoxLayout(self)
-        self.note=QLabel('Wait for the search results to appear. Complete any site verification yourself, then click Read These Results. Only this displayed page is imported.')
+        self.note=QLabel('Complete any site verification, then click Read These Results once. Later searches reuse this session in the background. If the site expires your session, open this page to verify again.')
         self.note.setWordWrap(True); layout.addWidget(self.note)
         self.browser=QWebEngineView(self); layout.addWidget(self.browser,1)
+        if storage is not None:
+            storage.mkdir(parents=True, exist_ok=True)
+            self.profile = QWebEngineProfile(str(storage.name), self)
+            self.profile.setPersistentStoragePath(str(storage/'storage'))
+            self.profile.setCachePath(str(storage/'cache'))
+            self.profile.setHttpCacheMaximumSize(16 * 1024 * 1024)
+            self.profile.setPersistentCookiesPolicy(QWebEngineProfile.ForcePersistentCookies)
+            self.browser.setPage(QWebEnginePage(self.profile, self.browser))
+        self.timeout = QTimer(self)
+        self.timeout.setSingleShot(True)
+        self.timeout.timeout.connect(lambda: self.finish_background(None, 'Verification or page loading needs attention. Open Read Provider Page again.'))
+        self.idle = QTimer(self)
+        self.idle.setSingleShot(True)
+        self.idle.timeout.connect(self.discard_idle_page)
+        self.browser.loadFinished.connect(self.loaded)
         row=QHBoxLayout(); layout.addLayout(row)
         read=QPushButton('Read These Results'); row.addWidget(read)
         read.clicked.connect(lambda: self.browser.page().toHtml(self.read_html))
         close=QPushButton('Close'); row.addWidget(close); close.clicked.connect(self.reject)
-        self.browser.setUrl(QUrl(provider_url(source,query)))
+        self.expected_url = provider_url(source, query)
+        self.browser.setUrl(QUrl(self.expected_url))
+
+    def navigate(self, query):
+        from PySide6.QtWebEngineCore import QWebEnginePage
+        self.generation += 1
+        self.rows = None
+        self.idle.stop()
+        self.browser.page().setLifecycleState(QWebEnginePage.Active)
+        self.expected_url = provider_url(self.source, query)
+        self.browser.setUrl(QUrl(self.expected_url))
+
+    def request_background(self, query, callback):
+        self.hide()
+        self.callback = callback
+        self.navigate(query)
+        self.timeout.start(35000)
+
+    def loaded(self, ok):
+        if ok and self.callback is not None:
+            token = self.generation
+            self.browser.page().toHtml(lambda html: self.background_html(html, token))
+
+    def background_html(self, content, token):
+        if token != self.generation or self.callback is None:
+            return
+        expected, current = urlsplit(self.expected_url), urlsplit(self.browser.url().toString())
+        if unquote(current.path).rstrip('/') != unquote(expected.path).rstrip('/') or parse_qs(current.query).get('q') != parse_qs(expected.query).get('q'):
+            return
+        try:
+            rows, summary = parse_provider_page(self.source, content, self.browser.url().toString())
+        except Exception:
+            # Give the site's own scripts time to render. Never solve or click
+            # verification challenges; the user must handle renewed challenges.
+            QTimer.singleShot(1000, lambda: self.retry_html(token))
+            return
+        self.finish_background(rows, summary)
+
+    def retry_html(self, token):
+        if token == self.generation and self.callback is not None:
+            self.browser.page().toHtml(lambda html: self.background_html(html, token))
+
+    def finish_background(self, rows, summary):
+        callback, self.callback = self.callback, None
+        self.timeout.stop()
+        if rows is None:
+            self.browser.stop()
+        self.idle.start(60000)
+        if callback is not None:
+            callback(rows, summary)
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self.idle.start(60000)
+
+    def discard_idle_page(self):
+        if not self.isVisible() and self.callback is None:
+            from PySide6.QtWebEngineCore import QWebEnginePage
+            self.browser.page().setLifecycleState(QWebEnginePage.Discarded)
+
+    def shutdown(self):
+        self.generation += 1
+        self.callback = None
+        self.timeout.stop()
+        self.idle.stop()
+        self.browser.stop()
+        self.browser.page().deleteLater()
+
     def read_html(self, content):
         try:
             self.rows, self.summary = parse_provider_page(self.source,content,self.browser.url().toString())

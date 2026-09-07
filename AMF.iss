@@ -2,7 +2,7 @@
 #ifndef RuntimeDir
   #error RuntimeDir must point to the verified Python runtime including site-packages
 #endif
-#define AppVersion "4.13"
+#define AppVersion "4.14"
 [Setup]
 AppId=AMF
 AppName=AMF
@@ -15,7 +15,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.17763
 OutputDir=dist
-OutputBaseFilename=AMF-4.13-Setup
+OutputBaseFilename=AMF-4.14-Setup
 SetupIconFile=payload\AMF.ico
 UninstallDisplayIcon={app}\AMF.ico
 Compression=lzma2/normal

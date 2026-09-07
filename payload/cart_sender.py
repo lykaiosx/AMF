@@ -3,6 +3,7 @@ import json
 import os
 from reliability import record_history, error_guidance
 from pathlib import Path
+from yts_provider import is_yts_item, fetch_metadata
 from PySide6.QtCore import QThread, Signal
 
 
@@ -44,6 +45,13 @@ class CartSender(QThread):
                         self.progress.emit(key, 'Sending', '')
                         if local:
                             result = client.torrents_add(torrent_files=self.api.local_torrent_payload(local), save_path=path)
+                        elif is_yts_item(item, source):
+                            # Older carts also contain trackerless YTS magnets.
+                            # Send verified metainfo bytes instead of asking the
+                            # client to discover metadata from peers.
+                            data = fetch_metadata(item, source, self.api)
+                            if self.isInterruptionRequested(): break
+                            result = client.torrents_add(torrent_files=data, save_path=path)
                         elif link.lower().startswith('magnet:'):
                             result = client.torrents_add(urls=link, save_path=path)
                         elif link.lower().startswith(('http://', 'https://')):

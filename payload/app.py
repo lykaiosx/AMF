@@ -55,7 +55,7 @@ CART_FILE = APP_DIR / "cart.json"
 
 BACKGROUND_SERVICES = False
 APP_NAME = "AMF"
-APP_VERSION = "4.13"
+APP_VERSION = "4.14"
 APP_USER_MODEL_ID = "AMF.Desktop"
 PID_FILE = APP_DIR / "amf.pid"
 
@@ -6516,7 +6516,7 @@ class AnimeDownloader(QMainWindow):
         if not query:
             self.toast.show_message("Enter a search term first", 3500)
             return
-        if self.search_worker and self.search_worker.isRunning():
+        if not self.search_btn.isEnabled():
             self.toast.show_message("Wait for the current search to finish", 3500)
             return
         source = next((x for x in self.config.get("sources", []) if source_provider_identity(x) == identity), None)
@@ -6524,9 +6524,14 @@ class AnimeDownloader(QMainWindow):
             return
         try:
             from provider_pages import ProviderPageDialog
-            dialog = ProviderPageDialog(self, source, query)
+            dialog = self.provider_session(source)
+            dialog.navigate(query)
             if dialog.exec() != QDialog.Accepted:
                 return
+            ready = self.config.setdefault('browser_session_sources', [])
+            if identity not in ready:
+                ready.append(identity)
+                save_json(CONFIG_FILE, self.config)
             name = source.get("name", "")
             remaining = [r for r in self.search_results if r.get("source") != name]
             statuses = dict(self.source_status)
@@ -6542,7 +6547,21 @@ class AnimeDownloader(QMainWindow):
         except Exception as exc:
             QMessageBox.warning(self, "Provider page", str(exc))
 
+    def provider_session(self, source):
+        from provider_pages import ProviderPageDialog
+        identity = source_provider_identity(source)
+        if not hasattr(self, '_provider_sessions'):
+            self._provider_sessions = {}
+        if identity not in self._provider_sessions:
+            self._provider_sessions[identity] = ProviderPageDialog(
+                self, source, self.search_input.text().strip(), APP_DIR/'browser_sessions'/identity)
+        session = self._provider_sessions[identity]
+        session.source = dict(source)
+        return session
+
     def search_sources(self):
+        if not self.search_btn.isEnabled():
+            return
         query = self.search_input.text().strip()
         if not query:
             QMessageBox.information(self, "Search", "Enter a title first.")
@@ -6573,15 +6592,36 @@ class AnimeDownloader(QMainWindow):
         self.selected_result_keys = set()
         self.results_table.setRowCount(0)
 
+        browser_sources = [s for s in enabled if source_provider_identity(s) in ('eztv', 'annas_archive')
+                           and source_provider_identity(s) in self.config.get('browser_session_sources', [])]
+        regular = [s for s in enabled if s not in browser_sources]
+        pending = {'worker', *[source_provider_identity(s) for s in browser_sources]}
+        combined, combined_status = [], {}
+        def complete(key, rows, statuses):
+            if key not in pending:
+                return
+            combined.extend(rows)
+            combined_status.update(statuses)
+            pending.remove(key)
+            if not pending:
+                self.search_finished(combined, combined_status)
         self.search_worker = SearchWorker(
-            enabled,
+            regular,
             query,
             match_mode=match_mode,
             fuzzy_threshold=fuzzy_threshold
         )
-        self.search_worker.finished_search.connect(self.search_finished)
-        self.search_worker.failed.connect(self.search_failed)
+        self.search_worker.finished_search.connect(lambda rows, statuses: complete('worker', rows, statuses))
+        self.search_worker.failed.connect(lambda message: complete('worker', [], {s['name']: ('ERROR', message) for s in regular}))
         self.search_worker.start()
+        for source in browser_sources:
+            identity, name = source_provider_identity(source), source['name']
+            try:
+                self.provider_session(source).request_background(query,
+                    lambda rows, summary, key=identity, label=name: complete(key, rows or [],
+                        {label: ('OK' if rows is not None else 'ERROR', summary)}))
+            except Exception as exc:
+                complete(identity, [], {name: ('ERROR', str(exc))})
 
     def search_finished(self, results, statuses):
         if any(r.get("provider_page") for r in results):
@@ -8900,6 +8940,8 @@ class AnimeDownloader(QMainWindow):
 
         if hasattr(self, '_session_marker'):
             self._session_marker.unlink(missing_ok=True)
+        for session in getattr(self, '_provider_sessions', {}).values():
+            session.shutdown()
         super().closeEvent(event)
 
 
@@ -9256,21 +9298,15 @@ class AnimeDownloader(QMainWindow):
             contents = QSize(choice.fontMetrics().horizontalAdvance(choice.currentText()) + 12,
                              choice.fontMetrics().height())
             choice.setFixedWidth(choice.style().sizeFromContents(QStyle.CT_ComboBox, option, contents, choice).width())
-        from PySide6.QtGui import QImage, QPixmap
+        from PySide6.QtGui import QPixmap
+        from branding import square_logo
         logo = self.findChild(QLabel, 'brandIcon')
         if logo is not None:
             filename = 'logo-light.png' if name == 'Light' else 'logo-dark.png'
             if not hasattr(self, '_brand_pixmaps'):
                 self._brand_pixmaps = {}
-            image = QImage(str(Path(__file__).parent / filename)) if filename not in self._brand_pixmaps else QImage()
-            if not image.isNull():
-                # The supplied artwork has a tall transparent canvas. Trim it
-                # for display without changing the original image file.
-                mask = image.createAlphaMask()
-                from PySide6.QtGui import QBitmap, QRegion
-                bounds = QRegion(QBitmap.fromImage(mask)).boundingRect()
-                pixmap = QPixmap.fromImage(image.copy(bounds))
-                self._brand_pixmaps[filename] = pixmap
+            if filename not in self._brand_pixmaps:
+                self._brand_pixmaps[filename] = QPixmap.fromImage(square_logo(Path(__file__).parent / filename))
             pixmap = self._brand_pixmaps.get(filename)
             if pixmap is not None:
                 logo.setPixmap(pixmap.scaled(42, 42, Qt.KeepAspectRatio, Qt.SmoothTransformation))
