@@ -33,7 +33,7 @@ with tempfile.TemporaryDirectory() as directory:
     check.setChecked(True)
     table.selectRow(0)
     qt.processEvents()
-    assert 'background: #22c55e' in window.styleSheet()
+    assert 'background: #e23636' in window.styleSheet()
     assert 'selection-background-color: #293548' in window.styleSheet()
     if len(sys.argv)>1: window.grab().save(str(Path(sys.argv[1])/'415-selection.png'))
     window.close()

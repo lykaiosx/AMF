@@ -1,3 +1,6 @@
+AMF 4.16
+Theme-accent checkboxes with contrasting ticks. FitGirl now uses paginated site search instead of only the first 50 A-Z titles; existing default entries migrate while preserving enabled state.
+
 AMF 4.15
 - High-DPI logo rendering, green checked indicators distinct from highlighted rows, double-click cart-selection toggles, and FitGirl A-Z catalogue as a default Games source. Settings now includes a read-only qBittorrent Download Status check explaining metadata waits, stopped downloads, tracker errors and seed availability. Sent means accepted by the client, not finished downloading. A newly added YTS transfer was confirmed downloading with complete metadata and connected seeds. Transfer speed still depends on reachable peers. History now offers Add to qBittorrent for selected entries, preserving their destination without repeating the search. Older entries are recovered from saved hashes or links when available.
 

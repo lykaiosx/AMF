@@ -55,7 +55,7 @@ CART_FILE = APP_DIR / "cart.json"
 
 BACKGROUND_SERVICES = False
 APP_NAME = "AMF"
-APP_VERSION = "4.15"
+APP_VERSION = "4.16"
 APP_USER_MODEL_ID = "AMF.Desktop"
 PID_FILE = APP_DIR / "amf.pid"
 
@@ -253,6 +253,10 @@ def ensure_builtin_default_sources(config):
     }
 
     changed = False
+    for source in sources:
+        if isinstance(source, dict) and source_provider_identity(source) == 'fitgirl' and source.get('url', '').rstrip('/') == 'https://fitgirl-repacks.site/all-my-repacks-a-z':
+            source.update(url='https://fitgirl-repacks.site/?s={query}', search_mode='Search Endpoint')
+            changed = True
 
     for builtin in BUILTIN_DEFAULT_SOURCES:
         provider_id = builtin["builtin_id"]
@@ -274,8 +278,8 @@ BUILTIN_DEFAULT_SOURCES.append({"builtin_id": "piratebay", "name": "The Pirate B
     "url": "https://thepiratebay.org/search.php?q={query}&cat=0",
     "enabled": True, "query_param": "", "mappings": {}, "headers": {}})
 BUILTIN_DEFAULT_SOURCES.append({'builtin_id': 'fitgirl', 'name': 'FitGirl Repacks',
-    'type': 'HTML Search', 'search_mode': 'Static Feed',
-    'url': 'https://fitgirl-repacks.site/all-my-repacks-a-z/',
+    'type': 'HTML Search', 'search_mode': 'Search Endpoint',
+    'url': 'https://fitgirl-repacks.site/?s={query}',
     'enabled': True, 'query_param': '', 'mappings': {}, 'headers': {}})
 
 for identity, name, url, kind in [
