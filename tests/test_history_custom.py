@@ -28,7 +28,10 @@ with tempfile.TemporaryDirectory() as directory:
     client.name='qBittorrent'
     client.torrents_add.return_value='Ok.'
     with patch.object(app.qbittorrentapi,'Client',return_value=client), patch.object(app.QFileDialog,'getExistingDirectory',return_value=str(root/'Custom')):
-        next(b for b in history.findChildren(QPushButton) if b.text()=='Add to qBittorrent in Custom Folder…').click()
+        assert not any('Custom Folder' in b.text() for b in history.findChildren(QPushButton))
+        table.cellDoubleClicked.emit(0,3)
+        assert history_entries(root)[0]['destination']==str(root/'Custom')
+        next(b for b in history.findChildren(QPushButton) if b.text()=='Add to qBittorrent').click()
         deadline=time.monotonic()+5
         while window.history_sender.isRunning():
             qt.processEvents();time.sleep(.01)
@@ -39,7 +42,7 @@ with tempfile.TemporaryDirectory() as directory:
     new=history_entries(root)[0]
     assert len(history_entries(root))==2
     assert history_download(new)['save_path']==str(root/'Custom')
-    assert next(e for e in history_entries(root) if e['event_id']=='old')['destination']==directory
+    assert next(e for e in history_entries(root) if e['event_id']=='old')['destination']==str(root/'Custom')
     assert history_download(new)['link']==restored['link']
     saved=dict(title='Safe fields',link='magnet:?xt=urn:btih:'+'ef'*20,save_path=directory,password='DO_NOT_STORE',headers={'Secret':'DO_NOT_STORE'})
     record_history(root,saved,'qBittorrent','Sent')

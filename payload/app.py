@@ -57,7 +57,7 @@ CART_FILE = APP_DIR / "cart.json"
 
 BACKGROUND_SERVICES = False
 APP_NAME = "AMF"
-APP_VERSION = "4.19"
+APP_VERSION = "4.20"
 APP_USER_MODEL_ID = "AMF.Desktop"
 PID_FILE = APP_DIR / "amf.pid"
 
@@ -255,7 +255,7 @@ def ensure_builtin_default_sources(config):
     }
 
     changed = False
-    kept = [source for source in sources if not (isinstance(source,dict) and source.get('builtin_id') == 'annas_archive')]
+    kept = [source for source in sources if not (isinstance(source,dict) and source_provider_identity(source) == 'annas_archive')]
     if len(kept) != len(sources):
         sources[:] = kept
         changed = True
@@ -299,40 +299,7 @@ for identity, name, url, kind in [
         "url": url, "type": kind, "search_mode": "Search Endpoint",
         "enabled": True, "query_param": "", "mappings": {}, "headers": {}})
 
-BUILTIN_SOURCE_PRESETS = [
-    {
-        "preset_name": "FOSS Torrents",
-        "source": {
-            "name": "FOSS Torrents",
-            "type": "RSS / Atom",
-            "search_mode": "Static Feed",
-            "url": "https://fosstorrents.com/feed/torrents.xml",
-            "query_param": "",
-            "dynamic_feed_url": "",
-            "dynamic_feed_query_param": "",
-            "results_path": "",
-            "mappings": {},
-            "headers": {},
-            "enabled": True
-        }
-    },
-    {
-        "preset_name": "DistroWatch Torrents",
-        "source": {
-            "name": "DistroWatch",
-            "type": "RSS / Atom",
-            "search_mode": "Static Feed",
-            "url": "https://distrowatch.com/news/torrents.xml",
-            "query_param": "",
-            "dynamic_feed_url": "",
-            "dynamic_feed_query_param": "",
-            "results_path": "",
-            "mappings": {},
-            "headers": {},
-            "enabled": True
-        }
-    }
-]
+BUILTIN_SOURCE_PRESETS = []
 
 def deep_copy(obj):
     return json.loads(json.dumps(obj))
@@ -6261,6 +6228,9 @@ class AnimeDownloader(QMainWindow):
         self.adapt_layout()
         from productivity_ui import install_productivity
         install_productivity(self, sys.modules[__name__])
+        from metadata_cache import MetadataManager
+        self._metadata_manager = MetadataManager(self, sys.modules[__name__])
+        self._metadata_manager.request()
         if self.credential_warnings:
             self.toast.show_message(self.credential_warnings[0], 12000)
 
@@ -6533,7 +6503,7 @@ class AnimeDownloader(QMainWindow):
             remaining = [r for r in self.search_results if r.get("source") != name]
             statuses = dict(self.source_status)
             statuses[name] = ("OK", dialog.summary)
-            self.results_table.setSortingEnabled(False)
+            self.results_table.setSortingEnabled(True)
             self.scope_filter.setCurrentIndex(0)
             self.resolution_filter.setCurrentIndex(0)
             self.min_seeders.setValue(0)
@@ -6621,8 +6591,7 @@ class AnimeDownloader(QMainWindow):
                 complete(identity, [], {name: ('ERROR', str(exc))})
 
     def search_finished(self, results, statuses):
-        if any(r.get("provider_page") for r in results):
-            self.results_table.setSortingEnabled(False)
+        self.results_table.setSortingEnabled(True)
         self.search_btn.setEnabled(True)
         self.source_status = statuses
 
@@ -7104,6 +7073,13 @@ class AnimeDownloader(QMainWindow):
         row.addWidget(clear)
         row.addWidget(reset_location)
         row.addWidget(resolve_titles)
+        retry_metadata = QPushButton('Retry Metadata')
+        def retry_preparation():
+            for item in self.cart:
+                if item.get('cart_status') == 'Metadata unavailable': item.pop('metadata_checked_link',None)
+            self._metadata_manager.request()
+        retry_metadata.clicked.connect(retry_preparation)
+        row.addWidget(retry_metadata)
         open_book = QPushButton('Open Book Download Page')
         open_book.clicked.connect(self.open_selected_book_page)
         row.addWidget(open_book)
@@ -7826,6 +7802,7 @@ class AnimeDownloader(QMainWindow):
             except (ValueError, OSError):
                 pass
         save_json(CART_FILE, self.cart)
+        if hasattr(self, '_metadata_manager'): self._metadata_manager.request()
 
     def refresh_cart_summary_only(self):
         total_bytes = sum(
@@ -8944,7 +8921,7 @@ class AnimeDownloader(QMainWindow):
 
     def closeEvent(self, event):
         for worker in (getattr(self, 'cart_sender', None), self.search_worker, self.test_worker,
-                       getattr(self, 'detect_worker', None), getattr(self, 'repair_worker', None), getattr(self, '_update_worker', None), getattr(self, '_transfer_status_worker', None), getattr(self, 'history_sender', None)):
+                       getattr(self, 'detect_worker', None), getattr(self, 'repair_worker', None), getattr(self, '_update_worker', None), getattr(self, '_transfer_status_worker', None), getattr(self, 'history_sender', None), getattr(self, 'metadata_worker', None)):
             if worker is not None and worker.isRunning():
                 worker.requestInterruption()
                 self.toast.show_message('Waiting for the current request to finish before closing.', 5000)

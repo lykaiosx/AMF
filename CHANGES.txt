@@ -1,3 +1,7 @@
+AMF 4.20
+Remove legacy Anna Archive sources by URL as well as ID and remove bundled Linux presets. Visible History multi-selection controls. Background cart metadata preparation with hash validation and cached torrent file submission; magnet-only sources explicitly report when metadata still requires peers.
+Restore numeric column sorting after browser-provider results. Double-click History Save Location to choose and persist the folder for the next send, replacing the separate custom-folder button. Fetch verified YTS metadata for mirrored YTS/YIFY releases returned by other sources too.
+
 AMF 4.19
 Folder setup follows the first-run tour. Native folder choices in Cart and History, including custom destination option. Shared dropdown geometry and no focus strokes on read-only table cells. Themed taskbar icon with white title-bar icon. Removed the routing panel and Anna's Archive built-in source/reader button. AnimeTosho search reads published size, seeds, peers and dates; counts are explicitly archived because the provider stopped updating in May 2026.
 

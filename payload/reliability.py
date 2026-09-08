@@ -70,7 +70,7 @@ def history_connection(root):
 def record_history(root, item, client, status, error=''):
     key = item.get('_queue_id') or hashlib.sha256((item.get('link','') + item.get('title','')).encode()).hexdigest()
     with history_connection(root) as db:
-        saved = {k:item[k] for k in ('title','source','link','info_hash','type','category','kind','scope','save_path','save_path_custom','local_torrent_path') if k in item}
+        saved = {k:item[k] for k in ('title','source','link','info_hash','type','category','kind','scope','save_path','save_path_custom','local_torrent_path','metadata_path','detail_url') if k in item}
         db.execute('INSERT OR REPLACE INTO events (event_id,time,title,identity,client,destination,status,error,payload) VALUES (?,?,?,?,?,?,?,?,?)',
             (key + ':' + status, datetime.now(timezone.utc).isoformat(timespec='seconds'), item.get('title',''),
              torrent_identity(item), client, item.get('save_path',''), status, str(error), json.dumps(saved)))
@@ -92,6 +92,14 @@ def history_entries(root, query='', offset=0, limit=200):
             ('%'+query+'%', '%'+query+'%',limit,offset))]
     db.close()
     return rows
+
+
+def set_history_destination(root, event_id, destination):
+    if not str(destination).strip():
+        raise ValueError('Choose a download folder.')
+    with history_connection(root) as db:
+        db.execute('UPDATE events SET destination=? WHERE event_id=?', (str(destination), event_id))
+    db.close()
 
 
 def history_download(entry):

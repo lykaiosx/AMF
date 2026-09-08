@@ -50,6 +50,7 @@ def parse_yts(payload, source):
 def is_yts_item(item, source):
     host = (urlsplit(source.get('url') or '').hostname or '').lower()
     return (source.get('builtin_id') == 'yts' or host in ('yts.gg', 'yts.mx')
+            or bool(re.search(r'\[(?:YTS(?:\.[A-Z]+)?|YIFY)\]', str(item.get('title') or ''), re.I))
             or str(item.get('source') or '').lower() in ('yts.gg', 'yts.mx', 'yts'))
 
 
@@ -63,6 +64,8 @@ def metadata_url(item, source):
             raise ValueError('YTS release has no valid torrent hash. Search for it again.')
         code = match[1]
     configured = urlsplit(source.get('url') or 'https://yts.gg')
+    if (configured.hostname or '').lower() not in ('yts.gg', 'yts.mx'):
+        configured = urlsplit('https://yts.gg')
     origin = f'{configured.scheme or "https"}://{configured.netloc or "yts.gg"}'
     return origin + '/torrent/download/' + code.upper()
 

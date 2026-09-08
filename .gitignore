@@ -20,3 +20,5 @@ session-active.json
 updates/
 browser_sessions/
 history-resend-receipts.jsonl
+
+metadata_cache/

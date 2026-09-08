@@ -47,7 +47,11 @@ class CartSender(QThread):
                         if not path: raise RuntimeError('No save location')
                         if not (link or local): raise RuntimeError('No torrent link or file')
                         self.progress.emit(key, 'Sending', '')
-                        if local:
+                        from metadata_cache import read_cached
+                        prepared = read_cached(item, self.api)
+                        if prepared:
+                            result = client.torrents_add(torrent_files=prepared, save_path=path)
+                        elif local:
                             result = client.torrents_add(torrent_files=self.api.local_torrent_payload(local), save_path=path)
                         elif is_yts_item(item, source):
                             # Older carts also contain trackerless YTS magnets.

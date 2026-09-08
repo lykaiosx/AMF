@@ -130,15 +130,22 @@ def install_productivity(owner, api):
     table = ToggleRowTable(0,6)
     table.setEditTriggers(QAbstractItemView.NoEditTriggers)
     table.setSelectionBehavior(QAbstractItemView.SelectRows)
+    table.setSelectionMode(QAbstractItemView.ExtendedSelection)
     table.setHorizontalHeaderLabels(['Time (UTC)','Title','Client','Save Location','Status','Details'])
     table.setEditTriggers(QAbstractItemView.NoEditTriggers)
     table.setSelectionBehavior(QAbstractItemView.SelectRows)
+    table.setSelectionMode(QAbstractItemView.ExtendedSelection)
     table.setColumnWidth(1,320)
     table.setColumnWidth(3,250)
     table.setColumnWidth(5,300)
     history_layout.addWidget(table,1)
     history_controls = FlowLayout()
-    history_layout.addLayout(history_controls)
+    history_layout.insertLayout(2,history_controls)
+    button(history_controls,'Select All Visible',table.selectAll)
+    button(history_controls,'Clear Selection',table.clearSelection)
+    selected_label=QLabel('0 selected — use Ctrl or Shift to select several rows')
+    history_layout.insertWidget(3,selected_label)
+    table.itemSelectionChanged.connect(lambda:selected_label.setText(f'{len(table.selectionModel().selectedRows())} selected — duplicate torrents are sent once'))
     page = [0]
     page_label = QLabel()
     def refresh_history():
@@ -163,7 +170,27 @@ def install_productivity(owner, api):
     history_status = QLabel('')
     history_status.setWordWrap(True)
     history_layout.addWidget(history_status)
-    def resend_history(custom=False):
+    def edit_history_folder(row, column):
+        if column != 3: return
+        entry = table.item(row, 0).data(Qt.UserRole)
+        folder = QFileDialog.getExistingDirectory(owner, 'Choose download folder', entry.get('destination') or '')
+        if not folder: return
+        from reliability import set_history_destination
+        try:
+            set_history_destination(api.APP_DIR, entry['event_id'], folder)
+        except Exception as exc:
+            history_status.setText(str(exc))
+            return
+        entry['destination'] = folder
+        for col in range(table.columnCount()):
+            table.item(row, col).setData(Qt.UserRole, entry)
+        table.item(row, 3).setText(folder)
+        table.item(row, 3).setToolTip(folder)
+        history_status.setText('Folder saved for the next send. Existing downloads have not been moved.')
+    table.folderColumn = 3
+    table.cellDoubleClicked.connect(edit_history_folder)
+    table.horizontalHeaderItem(3).setToolTip('Double-click a saved location to choose a folder for the next send.')
+    def resend_history():
         if any(getattr(owner, key, None) is not None and getattr(owner, key).isRunning() for key in ('history_sender','cart_sender')):
             history_status.setText('Wait for the current send to finish.')
             return
@@ -171,10 +198,6 @@ def install_productivity(owner, api):
         if not indexes:
             history_status.setText('Select a history row first.')
             return
-        chosen_folder = None
-        if custom:
-            chosen_folder = QFileDialog.getExistingDirectory(owner, 'Choose destination for selected history entries')
-            if not chosen_folder: return
         import uuid
         from cart_sender import CartSender
         batch, seen = [], set()
@@ -182,7 +205,6 @@ def install_productivity(owner, api):
             for index in indexes:
                 entry = table.item(index.row(),0).data(Qt.UserRole)
                 item = history_download(entry)
-                if chosen_folder: item.update(save_path=chosen_folder,save_path_custom=True)
                 identity = torrent_identity(item)
                 if identity in seen: continue
                 seen.add(identity)
@@ -216,7 +238,6 @@ def install_productivity(owner, api):
         history_status.setText('Adding selected history entries to qBittorrent…')
         owner.history_sender.start()
     resend=button(history_controls,'Add to qBittorrent',lambda:resend_history())
-    button(history_controls,'Add to qBittorrent in Custom Folder…',lambda:resend_history(True))
     history_controls.addWidget(page_label)
     search_timer=QTimer(owner)
     search_timer.setSingleShot(True)

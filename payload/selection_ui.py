@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QTableWidget, QCheckBox
 
 class ToggleRowTable(QTableWidget):
     doubleClickChecks = False
+    folderColumn = -1
     def mousePressEvent(self, event):
         index = self.indexAt(event.position().toPoint())
         self._row_was_selected = index.isValid() and self.selectionModel().isRowSelected(index.row(), index.parent())
@@ -14,6 +15,10 @@ class ToggleRowTable(QTableWidget):
         index = self.indexAt(event.position().toPoint())
         if not index.isValid() or event.button() != Qt.LeftButton:
             return super().mouseDoubleClickEvent(event)
+        if index.column() == self.folderColumn:
+            self.cellDoubleClicked.emit(index.row(), index.column())
+            event.accept()
+            return
         check = self.cellWidget(index.row(), 0)
         if self.doubleClickChecks and isinstance(check, QCheckBox):
             check.setChecked(not check.isChecked())
