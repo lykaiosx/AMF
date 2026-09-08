@@ -35,7 +35,11 @@ class CartSender(QThread):
             with self.receipt_path.open('a', encoding='utf-8') as receipts:
                 for item, source in self.batch:
                     if self.isInterruptionRequested(): break
+                    from book_downloads import is_book_page, BOOK_GUIDANCE
                     key = item['_queue_id']
+                    if is_book_page(item):
+                        self.progress.emit(key, 'Open book page', BOOK_GUIDANCE)
+                        continue
                     try:
                         link = str(item.get('link') or '').strip()
                         local = item.get('local_torrent_path')

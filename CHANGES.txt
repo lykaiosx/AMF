@@ -1,3 +1,9 @@
+AMF 4.18
+Keep the native title-bar icon white across themes. Align appearance dropdown selection borders with the complete option row.
+
+AMF 4.17
+Anna's Archive book pages can be saved in the cart and opened using Open Book Download Page. Book pages remain in the cart when sending torrents and are never passed to a torrent client as torrent files.
+
 AMF 4.16
 Theme-accent checkboxes with contrasting ticks. FitGirl now uses paginated site search instead of only the first 50 A-Z titles; existing default entries migrate while preserving enabled state.
 

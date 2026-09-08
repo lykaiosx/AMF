@@ -304,7 +304,9 @@ def install_features(cls):
         if not Path(executable).is_file() or Path(executable).suffix.lower() != ".exe":
             QMessageBox.warning(self, "Client", "Choose the client executable in Settings and save it first.")
             return
+        from book_downloads import is_book_page
         for item in self.cart:
+            if is_book_page(item): continue
             link = item.get("local_torrent_path") or item.get("link", "")
             if not link:
                 continue

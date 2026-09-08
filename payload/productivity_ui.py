@@ -38,6 +38,12 @@ def install_productivity(owner, api):
         label = QLabel(caption)
         label.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
         choice.setObjectName('appearanceChoice')
+        from PySide6.QtWidgets import QListView, QStyledItemDelegate
+        popup = QListView(choice)
+        popup.setObjectName('appearancePopup')
+        popup.setSpacing(0)
+        popup.setItemDelegate(QStyledItemDelegate(popup))
+        choice.setView(popup)
         choice.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         row.addWidget(label, 0, Qt.AlignVCenter)
         row.addWidget(choice, 0, Qt.AlignVCenter)

@@ -55,7 +55,7 @@ CART_FILE = APP_DIR / "cart.json"
 
 BACKGROUND_SERVICES = False
 APP_NAME = "AMF"
-APP_VERSION = "4.16"
+APP_VERSION = "4.18"
 APP_USER_MODEL_ID = "AMF.Desktop"
 PID_FILE = APP_DIR / "amf.pid"
 
@@ -6869,7 +6869,10 @@ class AnimeDownloader(QMainWindow):
             )
             QApplication.processEvents()
 
-            if not result.get("link_usable"):
+            from book_downloads import is_book_page, prepare_book
+            if is_book_page(result):
+                prepare_book(result)
+            elif not result.get("link_usable"):
                 source = self.source_config_for_result(result)
 
                 resolved, error = resolve_result_download_link(
@@ -7117,9 +7120,24 @@ class AnimeDownloader(QMainWindow):
         row.addWidget(clear)
         row.addWidget(reset_location)
         row.addWidget(resolve_titles)
+        open_book = QPushButton('Open Book Download Page')
+        open_book.clicked.connect(self.open_selected_book_page)
+        row.addWidget(open_book)
         row.addStretch()
         row.addWidget(send)
         layout.addLayout(row)
+
+    def open_selected_book_page(self):
+        from book_downloads import is_book_page
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+        rows = sorted({index.row() for index in self.cart_table.selectionModel().selectedRows()})
+        books = [self.cart[row] for row in rows if 0 <= row < len(self.cart) and is_book_page(self.cart[row])]
+        if len(books) != 1:
+            QMessageBox.information(self, 'Book Download', 'Select one book page in the cart to open its download options.')
+            return
+        if not QDesktopServices.openUrl(QUrl(books[0]['link'])):
+            QMessageBox.warning(self, 'Book Download', 'The browser could not open this page. Please check your default browser.')
 
     def add_manual_link(self):
         link = self.manual_magnet.text().strip()
@@ -8853,6 +8871,14 @@ class AnimeDownloader(QMainWindow):
     def send_cart_to_qbittorrent(self):
         if getattr(self, 'cart_sender', None) and self.cart_sender.isRunning():
             return
+        from book_downloads import is_book_page, prepare_book, BOOK_GUIDANCE
+        books = [item for item in self.cart if is_book_page(item)]
+        if books:
+            for item in books: prepare_book(item)
+            self.save_cart()
+            self.refresh_cart()
+            QMessageBox.information(self, 'Book Downloads', f'{len(books)} book page(s) will remain in the cart. ' + BOOK_GUIDANCE)
+            if len(books) == len(self.cart): return
         if self.config.get('torrent_client') in ('uTorrent', 'Other desktop client'):
             return self.open_cart_in_desktop_client()
         if not self.cart:
@@ -8866,6 +8892,7 @@ class AnimeDownloader(QMainWindow):
         self.backup_cart_snapshot('before-send')
         batch = []
         for item in self.cart:
+            if is_book_page(item): continue
             item.setdefault('_queue_id', uuid.uuid4().hex)
             self.apply_default_save_path(item)
             batch.append((deep_copy(item), deep_copy(self.source_config_for_result(item))))
@@ -8881,7 +8908,7 @@ class AnimeDownloader(QMainWindow):
             return qbittorrentapi.Client(host=qb.get('host', '127.0.0.1'), port=int(qb.get('port', 8080)),
                 username=qb.get('username', ''), password=qb.get('password', ''),
                 REQUESTS_ARGS={'timeout': (10, 30)})
-        self._sending_items = {item['_queue_id']: item for item in self.cart}
+        self._sending_items = {item['_queue_id']: item for item in self.cart if not is_book_page(item)}
         self._sent_ids = set()
         self._send_failure = ''
         self.cart_sender = CartSender(client_factory, batch, APP_DIR / 'sent-receipts.jsonl', sys.modules[__name__], self)
@@ -9328,7 +9355,7 @@ class AnimeDownloader(QMainWindow):
                 sharp = pixmap.scaled(round(42 * ratio), round(42 * ratio), Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 sharp.setDevicePixelRatio(ratio)
                 logo.setPixmap(sharp)
-                self.setWindowIcon(QIcon(pixmap))
+                self.setWindowIcon(QIcon(str(Path(__file__).parent / 'AMF.ico')))
 
 
 
