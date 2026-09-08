@@ -2,7 +2,7 @@
 #ifndef RuntimeDir
   #error RuntimeDir must point to the verified Python runtime including site-packages
 #endif
-#define AppVersion "4.18"
+#define AppVersion "4.19"
 [Setup]
 AppId=AMF
 AppName=AMF
@@ -15,7 +15,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.17763
 OutputDir=dist
-OutputBaseFilename=AMF-4.18-Setup
+OutputBaseFilename=AMF-4.19-Setup
 SetupIconFile=payload\AMF.ico
 UninstallDisplayIcon={app}\AMF.ico
 Compression=lzma2/normal
@@ -32,7 +32,7 @@ Name: desktopicon; Description: "Create a desktop shortcut"; Flags: unchecked
 
 [Files]
 Source: "payload\*.py"; DestDir: "{app}"; Flags: ignoreversion
-Source: "payload\AMF.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "payload\AMF*.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\*.svg"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\AMF.png"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\logo-*.png"; DestDir: "{app}"; Flags: ignoreversion

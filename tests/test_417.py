@@ -11,7 +11,7 @@ with tempfile.TemporaryDirectory() as directory:
  app.APP_DIR,app.CONFIG_FILE,app.CART_FILE,app.PID_FILE=root,root/'config.json',root/'cart.json',root/'amf.pid'
  app.migrate_previous_state=lambda:None
  window=app.AnimeDownloader()
- source=next(s for s in window.config['sources'] if s.get('builtin_id')=='annas_archive');source['enabled']=True
+ source=dict(builtin_id='annas_archive',name='Custom book source',enabled=True);window.config['sources'].append(source)
  book=dict(source=source['name'],title='Example book',link='https://annas-archive.gl/md5/'+'a'*32,link_usable=False,type='Books',destination_custom=True)
  window.search_results=[book];window.apply_result_filters()
  window.results_table.cellWidget(0,0).setChecked(True)

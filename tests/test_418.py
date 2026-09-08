@@ -15,7 +15,7 @@ with tempfile.TemporaryDirectory() as directory:
   choice.setCurrentText(theme);window.apply_theme();qt.processEvents()
   icon=window.windowIcon().pixmap(32,32).toImage()
   pixels=[icon.pixelColor(x,y) for x in range(32) for y in range(32) if icon.pixelColor(x,y).alpha()>240]
-  assert pixels and all(c.red()>240 for c in pixels)
+  assert pixels and all((c.red()<10 if theme=='Light' else c.red()>240) for c in pixels)
   logo=window.findChild(QLabel,'brandIcon').pixmap().toImage()
   assert logo.pixelColor(logo.width()//2,logo.height()//2).red()==(0 if theme=='Light' else 255)
   choice.showPopup();qt.processEvents()

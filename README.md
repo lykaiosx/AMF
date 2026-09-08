@@ -1,8 +1,8 @@
-# AMF 4.18
+# AMF 4.19
 
-**[Download the Windows installer](https://github.com/lykaiosx/AMF/releases/tag/v4.18)**
+**[Download the Windows installer](https://github.com/lykaiosx/AMF/releases/tag/v4.19)**
 
-Run **AMF-4.18-Setup.exe**. It includes Python, Qt/PySide6 and all required Python
+Run **AMF-4.19-Setup.exe**. It includes Python, Qt/PySide6 and all required Python
 libraries. Installation runs offline without system Python or administrator access.
 Close AMF before upgrading. Search and downloading still require internet access.
 
@@ -16,9 +16,13 @@ The installer is not code-signed.
 
 ## Changes
 
-High-DPI logo rendering, green checked indicators distinct from highlighted rows, double-click cart-selection toggles, and FitGirl A-Z catalogue as a default Games source. Settings now includes a read-only qBittorrent Download Status check explaining metadata waits, stopped downloads, tracker errors and seed availability. Sent means accepted by the client, not finished downloading. A newly added YTS transfer was confirmed downloading with complete metadata and connected seeds. Transfer speed still depends on reachable peers. History now offers Add to qBittorrent for selected entries, preserving their destination without repeating the search. Older entries are recovered from saved hashes or links when available.
+Choose download folders after the first-run tour, or change them later in Settings. Cart supports a native folder picker through Save Location or Custom destination. History can re-send entries to their original folder or a new custom folder.
 
-- Read EZTV or Anna's Archive once after completing site verification. Later searches reuse
+Dropdowns share consistent popup sizing. Read-only table cells keep row selection without a focus outline. The taskbar icon follows the theme; the native title-bar icon stays white.
+
+Anna's Archive is no longer a built-in source and its reader button has been removed. AnimeTosho search includes its published size, seeds, peers and dates; its metadata is archived because the provider stopped updates in May 2026. FitGirl uses paginated site search.
+
+- Read EZTV once after completing site verification. Later searches reuse
   that browser session in the background. Cookies are saved locally; idle pages release
   rendering resources after one minute. A site can still require verification again when
   its session expires. Disabled sources are not searched.
@@ -87,7 +91,7 @@ Install the official [Inno Setup compiler](https://jrsoftware.org/isdl.php), the
 ```
 
 Building needs internet to prepare the pinned runtime. Output is
-`dist\AMF-4.18-Setup.exe` and `Setup.exe`. Runtime and installer binaries are excluded
+`dist\AMF-4.19-Setup.exe` and `Setup.exe`. Runtime and installer binaries are excluded
 from Git; use GitHub Releases for the ready-to-install EXE.
 
 `runtime_setup.ps1` checks the official Python archive and bundled PyPA pip zipapp

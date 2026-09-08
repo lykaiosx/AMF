@@ -1,6 +1,7 @@
 """Layouts and cart rendering that do not allocate a widget for every torrent."""
 from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, QRect, QSize
-from PySide6.QtWidgets import QLayout, QComboBox, QStyledItemDelegate, QStyle
+from PySide6.QtWidgets import QLayout, QStyledItemDelegate, QStyle
+from ui_controls import ChoiceBox as QComboBox, PlainCellDelegate
 
 
 def bounded_results(pool, function, items, progress, width=8):
@@ -120,10 +121,16 @@ class CartModel(QAbstractTableModel):
         return True
 
 
-class DestinationDelegate(QStyledItemDelegate):
+class DestinationDelegate(PlainCellDelegate):
     def createEditor(self, parent, option, index):
         editor = QComboBox(parent)
-        editor.addItems(DESTINATIONS)
+        editor.setStyleSheet("QComboBox { padding: 0px 6px; min-height: 0px; border-radius: 4px; }")
+        editor.addItems(DESTINATIONS + ["Custom destination…"])
         return editor
     def setEditorData(self, editor, index): editor.setCurrentText(index.data(Qt.EditRole))
-    def setModelData(self, editor, model, index): model.setData(index, editor.currentText())
+    def setModelData(self, editor, model, index):
+        if editor.currentText() == 'Custom destination…':
+            from PySide6.QtCore import QTimer
+            row=index.row()
+            QTimer.singleShot(0,lambda:model.owner.cart_cell_double_clicked(row,9))
+        else: model.setData(index, editor.currentText())

@@ -1,3 +1,6 @@
+AMF 4.19
+Folder setup follows the first-run tour. Native folder choices in Cart and History, including custom destination option. Shared dropdown geometry and no focus strokes on read-only table cells. Themed taskbar icon with white title-bar icon. Removed the routing panel and Anna's Archive built-in source/reader button. AnimeTosho search reads published size, seeds, peers and dates; counts are explicitly archived because the provider stopped updating in May 2026.
+
 AMF 4.18
 Keep the native title-bar icon white across themes. Align appearance dropdown selection borders with the complete option row.
 

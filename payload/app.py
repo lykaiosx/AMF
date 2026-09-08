@@ -35,6 +35,8 @@ from PySide6.QtWidgets import (
     QProgressDialog, QScrollArea, QTableView, QLayout
 )
 
+from ui_controls import ChoiceBox as QComboBox, PlainCellDelegate
+
 try:
     import qbittorrentapi
 except ImportError:
@@ -55,7 +57,7 @@ CART_FILE = APP_DIR / "cart.json"
 
 BACKGROUND_SERVICES = False
 APP_NAME = "AMF"
-APP_VERSION = "4.18"
+APP_VERSION = "4.19"
 APP_USER_MODEL_ID = "AMF.Desktop"
 PID_FILE = APP_DIR / "amf.pid"
 
@@ -253,7 +255,14 @@ def ensure_builtin_default_sources(config):
     }
 
     changed = False
+    kept = [source for source in sources if not (isinstance(source,dict) and source.get('builtin_id') == 'annas_archive')]
+    if len(kept) != len(sources):
+        sources[:] = kept
+        changed = True
     for source in sources:
+        if isinstance(source,dict) and source_provider_identity(source)=='animetosho' and 'feed.animetosho.org/rss2' in source.get('url',''):
+            source.update(url='https://animetosho.org/?q={query}',type='HTML Search',search_mode='Search Endpoint')
+            changed=True
         if isinstance(source, dict) and source_provider_identity(source) == 'fitgirl' and source.get('url', '').rstrip('/') == 'https://fitgirl-repacks.site/all-my-repacks-a-z':
             source.update(url='https://fitgirl-repacks.site/?s={query}', search_mode='Search Endpoint')
             changed = True
@@ -283,8 +292,7 @@ BUILTIN_DEFAULT_SOURCES.append({'builtin_id': 'fitgirl', 'name': 'FitGirl Repack
     'enabled': True, 'query_param': '', 'mappings': {}, 'headers': {}})
 
 for identity, name, url, kind in [
-    ("animetosho", "Anime Tosho", "https://feed.animetosho.org/rss2?only_tor=1&q={query}", "RSS / Atom"),
-    ("annas_archive", "Anna's Archive", "https://annas-archive.gl/search?q={query}", "HTML Search"),
+    ("animetosho", "Anime Tosho", "https://animetosho.org/?q={query}", "HTML Search"),
     ("eztv", "EZTV", "https://eztvx.to/search/{query}", "HTML Search"),
 ]:
     BUILTIN_DEFAULT_SOURCES.append({"builtin_id": identity, "name": name,
@@ -5381,6 +5389,9 @@ def fetch_source(
     fuzzy_threshold=70,
     local_query=None
 ):
+    if source_provider_identity(source) == 'animetosho':
+        from animetosho_provider import fetch
+        return fetch(source, query if local_query is None else local_query, timeout, sys.modules[__name__])
     if source_provider_identity(source) == 'fitgirl':
         from fitgirl_provider import fetch_fitgirl
         return fetch_fitgirl(source, query if local_query is None else local_query, timeout)
@@ -6395,7 +6406,7 @@ class AnimeDownloader(QMainWindow):
         self.results_table.setSortingEnabled(True)
         layout.addWidget(self.results_table, 1)
         provider_row = QHBoxLayout()
-        for identity, label in [("eztv", "Read EZTV Page"), ("annas_archive", "Read Anna’s Archive Page")]:
+        for identity, label in [("eztv", "Read EZTV Page")]:
             button = QPushButton(label)
             button.clicked.connect(lambda checked=False, i=identity: self.read_provider_page(i))
             provider_row.addWidget(button)
@@ -6430,35 +6441,6 @@ class AnimeDownloader(QMainWindow):
 
         self.set_advanced_columns_visible(False)
 
-        location_box = QGroupBox("Routing")
-        loc_layout = QVBoxLayout(location_box)
-
-        location_header = QHBoxLayout()
-        location_note = QLabel(
-            "Movies and series are routed automatically. Double-click Save Location "
-            "in Cart to override a single item."
-        )
-        location_note.setObjectName("mutedText")
-        location_note.setWordWrap(True)
-
-        edit_locations = QPushButton("Edit Locations")
-        edit_locations.clicked.connect(
-            lambda: self.tabs.setCurrentIndex(self.tabs.count() - 1)
-        )
-
-        location_header.addWidget(location_note, 1)
-        location_header.addWidget(edit_locations)
-        loc_layout.addLayout(location_header)
-
-        self.movies_path_label = QLabel()
-        self.series_path_label = QLabel()
-        self.movies_path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.series_path_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-
-        loc_layout.addWidget(self.movies_path_label)
-        loc_layout.addWidget(self.series_path_label)
-
-        layout.addWidget(location_box)
         self.refresh_source_filter_options()
 
 
@@ -6777,6 +6759,8 @@ class AnimeDownloader(QMainWindow):
                 item = SortableItem(text, sort_value)
                 if col == 1:
                     item.setToolTip(result.get("description") or result.get("title", ""))
+                if col in (7,8) and result.get("metadata_archived"):
+                    item.setToolTip("Archived AnimeTosho count; not a live swarm count.")
                 if col == 14 and not result.get("link_usable"):
                     item.setText("Resolve on Add")
                     item.setToolTip(
@@ -9331,6 +9315,10 @@ class AnimeDownloader(QMainWindow):
         self.setStyleSheet(theme_css(self._base_style, palette,
                                      max(10, round(int(appearance.get("text_size", 13)) * scale)),
                                      float(appearance.get("density", 1.0)) * scale))
+        for table in self.findChildren(QTableWidget) + self.findChildren(QTableView):
+            if not getattr(table, '_plain_cells', False):
+                table.setItemDelegate(PlainCellDelegate(table))
+                table._plain_cells = True
         for choice in self.findChildren(QComboBox, 'appearanceChoice'):
             choice.ensurePolished()
             from PySide6.QtWidgets import QStyle, QStyleOptionComboBox
@@ -9355,7 +9343,9 @@ class AnimeDownloader(QMainWindow):
                 sharp = pixmap.scaled(round(42 * ratio), round(42 * ratio), Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 sharp.setDevicePixelRatio(ratio)
                 logo.setPixmap(sharp)
-                self.setWindowIcon(QIcon(str(Path(__file__).parent / 'AMF.ico')))
+                self.setWindowIcon(QIcon(pixmap))
+                from native_icons import set_native_icons
+                set_native_icons(self, name)
 
 
 

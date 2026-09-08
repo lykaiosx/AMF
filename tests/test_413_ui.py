@@ -15,7 +15,7 @@ with tempfile.TemporaryDirectory() as directory:
     app.migrate_previous_state = lambda: None
     window = app.AnimeDownloader()
     assert [window.tabs.tabText(i) for i in range(5)] == ['Search', 'Cart', 'Sources', 'History', 'Settings']
-    next(b for b in window.findChildren(QPushButton) if b.text() == 'Edit Locations').click()
+    window.tabs.setCurrentIndex(window.tabs.count()-1)
     assert window.tabs.currentIndex() == 4
     window.show()
     logo_keys = []

@@ -38,9 +38,9 @@ def theme_css(base, palette, text_size=13, density=1):
         QLabel, QCheckBox {{ background: transparent; }}
         QLabel#versionBadge {{ color: {foreground}; background: {palette['accent']}; }}
         QPushButton#primaryButton {{ color: {foreground}; }}
-        QListView#appearancePopup {{ padding: 0px; margin: 0px; outline: 0px; }}
-        QListView#appearancePopup::item {{ margin: 0px; padding: 6px 8px; border: 1px solid transparent; }}
-        QListView#appearancePopup::item:selected {{ border: 1px solid {palette['muted']}; background: {selection}; }}
+        QListView#choicePopup {{ padding: 0px; margin: 0px; outline: 0px; }}
+        QListView#choicePopup::item {{ margin: 0px; padding: 6px 8px; border: 1px solid transparent; }}
+        QListView#choicePopup::item:selected {{ border: 1px solid {palette['muted']}; background: {selection}; }}
         QComboBox#appearanceChoice {{ padding: 4px 8px; min-height: 20px; }}
         QPushButton:focus, QLineEdit:focus, QComboBox:focus {{border:2px solid {palette["accent"]};}}
     '''

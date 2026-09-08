@@ -8,6 +8,7 @@ from pathlib import Path
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import (QWidget,QVBoxLayout,QHBoxLayout,QPushButton,QLineEdit,QLabel,QComboBox,
     QInputDialog,QMessageBox,QFileDialog,QCheckBox,QTableWidget,QTableWidgetItem,QAbstractItemView,QGroupBox)
+from ui_controls import ChoiceBox as QComboBox
 from reliability import history_rows, history_entries, history_download, diagnostic_report, error_guidance, previously_sent, torrent_identity
 from cart_sender import replay_receipts
 from scalable_ui import FlowLayout
@@ -38,12 +39,6 @@ def install_productivity(owner, api):
         label = QLabel(caption)
         label.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
         choice.setObjectName('appearanceChoice')
-        from PySide6.QtWidgets import QListView, QStyledItemDelegate
-        popup = QListView(choice)
-        popup.setObjectName('appearancePopup')
-        popup.setSpacing(0)
-        popup.setItemDelegate(QStyledItemDelegate(popup))
-        choice.setView(popup)
         choice.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         row.addWidget(label, 0, Qt.AlignVCenter)
         row.addWidget(choice, 0, Qt.AlignVCenter)
@@ -168,7 +163,7 @@ def install_productivity(owner, api):
     history_status = QLabel('')
     history_status.setWordWrap(True)
     history_layout.addWidget(history_status)
-    def resend_history():
+    def resend_history(custom=False):
         if any(getattr(owner, key, None) is not None and getattr(owner, key).isRunning() for key in ('history_sender','cart_sender')):
             history_status.setText('Wait for the current send to finish.')
             return
@@ -176,6 +171,10 @@ def install_productivity(owner, api):
         if not indexes:
             history_status.setText('Select a history row first.')
             return
+        chosen_folder = None
+        if custom:
+            chosen_folder = QFileDialog.getExistingDirectory(owner, 'Choose destination for selected history entries')
+            if not chosen_folder: return
         import uuid
         from cart_sender import CartSender
         batch, seen = [], set()
@@ -183,6 +182,7 @@ def install_productivity(owner, api):
             for index in indexes:
                 entry = table.item(index.row(),0).data(Qt.UserRole)
                 item = history_download(entry)
+                if chosen_folder: item.update(save_path=chosen_folder,save_path_custom=True)
                 identity = torrent_identity(item)
                 if identity in seen: continue
                 seen.add(identity)
@@ -215,7 +215,8 @@ def install_productivity(owner, api):
         resend.setEnabled(False)
         history_status.setText('Adding selected history entries to qBittorrent…')
         owner.history_sender.start()
-    resend=button(history_controls,'Add to qBittorrent',resend_history)
+    resend=button(history_controls,'Add to qBittorrent',lambda:resend_history())
+    button(history_controls,'Add to qBittorrent in Custom Folder…',lambda:resend_history(True))
     history_controls.addWidget(page_label)
     search_timer=QTimer(owner)
     search_timer.setSingleShot(True)
@@ -363,4 +364,6 @@ def install_productivity(owner, api):
                 for title,text in steps:
                     box=QMessageBox(owner); box.setWindowTitle(f'AMF Tour • {title}'); box.setText(text); box.addButton('Back',QMessageBox.RejectRole); box.addButton('Next',QMessageBox.AcceptRole); box.addButton('Finish',QMessageBox.DestructiveRole); box.exec()
             owner.config['show_first_run_tour']=False; persist()
+            from folder_setup import setup_folders
+            setup_folders(owner,persist)
         QTimer.singleShot(700,tour)
